@@ -65,19 +65,19 @@ def execute():
             pass
 
     # Stack keeps the record for the next enumerations
-    stack = [([],Top())]
+    stack = [([],Top(), Top())]
 
     t0 = time.time()
 
     
     while intent != [-1]:
-        # print "\nSTACK",[i[0] for i in stack]
+        # print "\nSTACK",[(i[0], i[2]) for i in stack]
         preintent = l_close(intent, L)
 
 
         s_preintent = sorted(preintent)
 
-        # print '\r >>>{:<30}'.format(intent),
+        print '\r >>>{:<30}'.format(intent),
         # print stack
         sys.stdout.flush()
 
@@ -87,9 +87,10 @@ def execute():
             enum.next(enum.last(intent))
             continue
             
-        for prevint, prevext in reversed(stack):
+        for prevint, prevext, prevAI in reversed(stack):
             if len(preintent) < len(prevint) or any(x not in preintent for x in prevint):
                 stack.pop()
+                # print 'pop'
             else:
                 break
         
@@ -111,7 +112,7 @@ def execute():
         # OBTAINED FROM THE PRECLOSURE.
         # TE INTENT ENUMERATED IS COMPOSED BY A PREFIX AND A
 
-        prevint, prevext = stack[-1]
+        prevint, prevext, prevAI = stack[-1]
         
         # preextent = reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
         # print stack[-3:]
@@ -124,12 +125,14 @@ def execute():
         closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
         # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
         go_on = bool(closed_preintent)
-        
+        AI = None
+        # print '\t', closed_preintent
         while go_on:
-            AJJ = closed_preintent.union(preintent)
-            AII, AI = db.check(preintent, preextent)
-
-            if AII == AJJ:
+            # AJJ = closed_preintent.union(preintent)
+            AII, AI = db.check(new_att, prevint, closed_preintent, prevAI)
+            # print AII, closed_preintent
+            if AII == closed_preintent:
+                # print ':)'
 
                 L.append((preintent, closed_preintent.union(preintent)))
                 
@@ -142,10 +145,10 @@ def execute():
 
             else:
 
-                new_obj = db.increment_sample(AI, AJJ)
+                new_obj = db.increment_sample(AI, AII, closed_preintent, preintent)
 
-                preextent.desc.add(new_obj)
-                for i, j in stack:
+                preextent.add(new_obj)
+                for i, j, k in stack:
                     j.add(new_obj)                
                 closed_preintent = set([i for i in closed_preintent if preextent.leq(db.ps[i])])
 
@@ -154,7 +157,7 @@ def execute():
         if len(intent) < len(preintent) and any(i < new_att for i in preintent):
             intent = sorted(preintent)
         # print "adding", preintent
-        stack.append((preintent, preextent))
+        stack.append((preintent, preextent, AI))
         enum.next(intent)
 
     print
