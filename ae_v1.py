@@ -4,7 +4,7 @@ import time
 from itertools import combinations
 
 from lib.enumerations import LectiveEnum
-from lib.representations import PairSet, Partition, Expert
+from lib.representations import PairSet, Partition, Expert, Top
 
 
 SPLIT = 0
@@ -56,13 +56,7 @@ def execute():
     enum.next(intent)
     iterations = 0
 
-    class Top(object):
-        @staticmethod
-        def intersection(other):
-            return other
-        @staticmethod
-        def add(obj):
-            pass
+
 
     # Stack keeps the record for the next enumerations
     stack = [([],Top(), Top())]
@@ -125,11 +119,16 @@ def execute():
         closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
         # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
         go_on = bool(closed_preintent)
-        AI = None
+        AI = Partition([])
+        # print "AI", AI, AI.is_empty()
+        # AI = None
         # print '\t', closed_preintent
         while go_on:
             # AJJ = closed_preintent.union(preintent)
+            # print prevAI
             AII, AI = db.check(new_att, prevint, closed_preintent, prevAI)
+            # print prevAI
+            # print ''
             # print AII, closed_preintent
             if AII == closed_preintent:
                 # print ':)'
