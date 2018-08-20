@@ -7,7 +7,7 @@ from lib.enumerations import LectiveEnum
 from lib.representations import PairSet, Partition, Expert
 
 
-SPLIT = 0.0001
+SPLIT = 0
 G = set([])
 
 
@@ -60,6 +60,9 @@ def execute():
         @staticmethod
         def intersection(other):
             return other
+        @staticmethod
+        def add(obj):
+            pass
 
     # Stack keeps the record for the next enumerations
     stack = [([],Top())]
@@ -68,25 +71,32 @@ def execute():
 
     
     while intent != [-1]:
+        # print "\nSTACK",[i[0] for i in stack]
+        preintent = l_close(intent, L)
 
-        for prevint, prevext in reversed(stack):
-            if len(intent) < len(prevint) or any(x not in intent for x in prevint):
-                stack.pop()
-            else:
-                break
 
-        iterations+=1
-        
-        print '\r {:<30}'.format(intent),
+        s_preintent = sorted(preintent)
+
+        # print '\r >>>{:<30}'.format(intent),
         # print stack
         sys.stdout.flush()
 
-        preintent = l_close(intent, L)
-        s_preintent = sorted(preintent)
+        
         
         if any(i>j for i,j in zip(intent, s_preintent)):
             enum.next(enum.last(intent))
             continue
+            
+        for prevint, prevext in reversed(stack):
+            if len(preintent) < len(prevint) or any(x not in preintent for x in prevint):
+                stack.pop()
+            else:
+                break
+        
+        iterations+=1
+        
+        
+        
 
         # WE NEED TO RECOVER THE PREVIOUS EXTENT CALCULATED FOR THE PREFIX 
         # OF INTENT, RECALL THAT intent IS A PREFIX PLUS SOMETHING, AND WE
@@ -106,54 +116,47 @@ def execute():
         # preextent = reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
         # print stack[-3:]
         # print intent, prevint
-        new_att = [i for i in intent if i not in prevint][0]
+        new_att = [i for i in intent if i not in prevint][-1]
         # print "NEWATT", new_att
-        preextent = prevext.intersection(db.ps[new_att])# reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
-        
-        # print db.ps.items()
+        # preextent = # 
+        preextent = prevext.intersection(db.ps[new_att])
+
         closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
         # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
         go_on = bool(closed_preintent)
-    
+        
         while go_on:
-            # print '\t::', preintent
             AJJ = closed_preintent.union(preintent)
             AII, AI = db.check(preintent, preextent)
-            # print '\n',AII, AJJ, '::',closed_preintent, AII==AJJ
 
             if AII == AJJ:
 
                 L.append((preintent, closed_preintent.union(preintent)))
                 
                 if max(intent) < min(closed_preintent):
-                    # print 'y'
                     intent = sorted(closed_preintent.union(preintent))
                 else:
-                    # intent = sorted(preintent)
-                    # print 'x'
                     enum.last(intent)
                 go_on=False
-                # exit()
                 break
+
             else:
-                # print AII, AJJ
-                db.increment_sample(AI, AJJ)
-                # exit()
-            # print preextent, preintent, [db.ps[i] for i in preintent]
-            preextent = reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
-            # print preextent
-            # exit()
-            closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
+
+                new_obj = db.increment_sample(AI, AJJ)
+
+                preextent.desc.add(new_obj)
+                for i, j in stack:
+                    j.add(new_obj)                
+                closed_preintent = set([i for i in closed_preintent if preextent.leq(db.ps[i])])
+
             go_on = bool(closed_preintent)
+
         if len(intent) < len(preintent) and any(i < new_att for i in preintent):
-            # print '????'
             intent = sorted(preintent)
-        # print '==>',new_att, intent, preintent, closed_preintent
+        # print "adding", preintent
         stack.append((preintent, preextent))
-        # else:
-        # intent = sorted(preintent)
-        
         enum.next(intent)
+
     print
     # print L
     print len(L)
