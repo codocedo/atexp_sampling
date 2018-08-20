@@ -42,8 +42,11 @@ def execute():
     '''
     file_input_path = sys.argv[1]
     
+    # Stack keeps the record for the next enumerations
+    stack = [([],Top(), Top())]
+
     # READ DATABASE
-    db = Expert(split=SPLIT)
+    db = Expert(stack=stack, split=SPLIT)
     db.read_csv(file_input_path)
 
     L = [] # FD DATABASE
@@ -58,8 +61,7 @@ def execute():
 
 
 
-    # Stack keeps the record for the next enumerations
-    stack = [([],Top(), Top())]
+    
 
     t0 = time.time()
 
