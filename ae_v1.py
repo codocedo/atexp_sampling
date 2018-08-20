@@ -4,7 +4,7 @@ import time
 from itertools import combinations
 
 from lib.enumerations import LectiveEnum
-from lib.representations import PairSet, Partition, Expert, Top
+from lib.representations import PairSet, Partition, Expert, Top, ExpertSampler
 
 
 SPLIT = 0
@@ -43,10 +43,11 @@ def execute():
     file_input_path = sys.argv[1]
     
     # Stack keeps the record for the next enumerations
-    stack = [([],Top(), Top())]
+    stack = [([], Top(), Top())]
 
     # READ DATABASE
-    db = Expert(stack=stack, split=SPLIT)
+    # db = Expert(stack=stack, split=SPLIT)
+    db = ExpertSampler(stack=stack, split=SPLIT)
     db.read_csv(file_input_path)
 
     L = [] # FD DATABASE
@@ -65,15 +66,20 @@ def execute():
 
     t0 = time.time()
 
-    
+    shorts = 0
+    shorts2 = 0
     while intent != [-1]:
-        # print "\nSTACK",[(i[0], i[2]) for i in stack]
+        # print "\nSTACK",[i[0] for i in stack]
         preintent = l_close(intent, L)
-
-
+        
+        
+        
         s_preintent = sorted(preintent)
+        
+        # shorts2 += [i in intent for i in range(db.n_atts)] in db.non_fds
 
-        print '\r >>>{:<30}'.format(intent),
+
+        print '\r >>>{:<30}'.format(intent),type(intent),
         # print stack
         sys.stdout.flush()
 
@@ -82,6 +88,10 @@ def execute():
         if any(i>j for i,j in zip(intent, s_preintent)):
             enum.next(enum.last(intent))
             continue
+
+        
+
+        
             
         for prevint, prevext, prevAI in reversed(stack):
             if len(preintent) < len(prevint) or any(x not in preintent for x in prevint):
@@ -89,6 +99,10 @@ def execute():
                 # print 'pop'
             else:
                 break
+
+        
+
+        
         
         iterations+=1
         
@@ -113,19 +127,35 @@ def execute():
         # preextent = reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
         # print stack[-3:]
         # print intent, prevint
+        # print "PREVINT",prevint, intent
         new_att = [i for i in intent if i not in prevint][-1]
         # print "NEWATT", new_att
         # preextent = # 
         preextent = prevext.intersection(db.ps[new_att])
-
-        closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
-        # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
-        go_on = bool(closed_preintent)
         AI = Partition([])
+
+        match = [i in preintent for i in range(db.n_atts)]
+        
+        # if match in db.non_fds:
+        #     print ''
+        #     shorts+=1
+        #     stack.append((preintent, preextent, AI))
+        #     print '>',intent
+        #     enum.next(intent)
+        #     print '<',intent
+        #     continue
+
+        
+        # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
+        go_on = match not in db.non_fds
+        shorts += match in db.non_fds
         # print "AI", AI, AI.is_empty()
         # AI = None
         # print '\t', closed_preintent
         while go_on:
+            closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
+            if not bool(closed_preintent):
+                break
             # AJJ = closed_preintent.union(preintent)
             # print prevAI
             AII, AI = db.check(new_att, prevint, closed_preintent, prevAI)
@@ -151,9 +181,9 @@ def execute():
                 preextent.add(new_obj)
                 for i, j, k in stack:
                     j.add(new_obj)                
-                closed_preintent = set([i for i in closed_preintent if preextent.leq(db.ps[i])])
+                # closed_preintent = set([i for i in closed_preintent if preextent.leq(db.ps[i])])
 
-            go_on = bool(closed_preintent)
+            # go_on = bool(closed_preintent)
 
         if len(intent) < len(preintent) and any(i < new_att for i in preintent):
             intent = sorted(preintent)
@@ -167,6 +197,8 @@ def execute():
     print iterations 
     print "SAMPLE", len(list(db.sample)), "REAL", len(G), "INCREMENTS:", db.increments
     print 'Time:', time.time()-t0
+    print "SHORTS:", shorts
+    print "SHORTS2:", shorts2
     # for ri, (i, j) in enumerate(L):
     #     print ri+1, i, j-i
     print 
