@@ -3,8 +3,8 @@ import sys
 import time
 from itertools import combinations
 
-from lib.enumerations import LectiveEnum
-from lib.representations import PairSet, Partition, Expert, Top, ExpertSampler
+from ae_libs.enumerations import LectiveEnum
+from ae_libs.representations import PairSet, Partition, Expert, Top, ExpertSampler
 
 
 SPLIT = 0
@@ -79,7 +79,7 @@ def execute():
         # shorts2 += [i in intent for i in range(db.n_atts)] in db.non_fds
 
 
-        print '\r >>>{:<30}'.format(intent),type(intent),
+        print '\r {:<30}'.format(intent[-20:]),
         # print stack
         sys.stdout.flush()
 
