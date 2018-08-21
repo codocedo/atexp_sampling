@@ -1,16 +1,15 @@
 # TEST FROM SCRATCH
 import sys
 import time
+import json
 from itertools import combinations
 
 from ae_libs.enumerations import LectiveEnum
 from ae_libs.representations import PairSet, Partition, Expert, Top, ExpertSampler
+from ae_libs.fd_tree import FDTree
 
 
 SPLIT = 0
-G = set([])
-
-
 
 def read_csv(path, separator=','):
     mat = [map(str, line.replace('\n','').split(separator)) for line in open(path, 'r').readlines()]
@@ -18,7 +17,6 @@ def read_csv(path, separator=','):
 
 
 def l_close(pat, L):
-    #print L
     newpat = set(pat)
     
     complement = set([])
@@ -34,6 +32,21 @@ def l_close(pat, L):
             break
     return newpat
 
+def l2_close(pat, fd_store):
+    newpat = set(pat)
+    # fds = list(fd_store.read_fds())
+    
+    # print "FIND FOR ", pat
+    
+    while True:
+        complement = reduce(set.union, [set([])]+[rhs for rhs in fd_store.find_rhss(newpat)])
+        if complement.issubset(newpat):
+            break
+        newpat.update(complement)
+    return newpat
+            
+    #     exit()
+
     
 def execute():
     '''
@@ -46,12 +59,21 @@ def execute():
     stack = [([], Top(), Top())]
 
     # READ DATABASE
-    # db = Expert(stack=stack, split=SPLIT)
-    db = ExpertSampler(stack=stack, split=SPLIT)
+    db = ExpertSampler(
+        stack=stack,
+        split=SPLIT
+    )
     db.read_csv(file_input_path)
 
     L = [] # FD DATABASE
+    fd_store = FDTree(db.n_atts)
 
+    rhs = set(db.get_top_atts())
+    if bool(rhs):
+        L = [(set([]), rhs)]
+        for r in rhs:
+            fd_store.add(set([]), r)
+    
     # Enumeration of candidates
     enum = LectiveEnum(len(db.atts)-1)
 
@@ -60,54 +82,35 @@ def execute():
     enum.next(intent)
     iterations = 0
 
-
-
-    
-
     t0 = time.time()
 
     shorts = 0
     shorts2 = 0
     while intent != [-1]:
         # print "\nSTACK",[i[0] for i in stack]
-        preintent = l_close(intent, L)
-        
+        # preintent = l_close(intent, L)
+        preintent = l2_close(intent, fd_store)
         
         
         s_preintent = sorted(preintent)
         
         # shorts2 += [i in intent for i in range(db.n_atts)] in db.non_fds
 
-
         print '\r {:<30}'.format(intent[-20:]),
         # print stack
         sys.stdout.flush()
-
-        
         
         if any(i>j for i,j in zip(intent, s_preintent)):
             enum.next(enum.last(intent))
             continue
-
-        
-
-        
             
         for prevint, prevext, prevAI in reversed(stack):
             if len(preintent) < len(prevint) or any(x not in preintent for x in prevint):
                 stack.pop()
-                # print 'pop'
             else:
                 break
-
-        
-
-        
         
         iterations+=1
-        
-        
-        
 
         # WE NEED TO RECOVER THE PREVIOUS EXTENT CALCULATED FOR THE PREFIX 
         # OF INTENT, RECALL THAT intent IS A PREFIX PLUS SOMETHING, AND WE
@@ -124,34 +127,16 @@ def execute():
 
         prevint, prevext, prevAI = stack[-1]
         
-        # preextent = reduce(lambda x, y: x.intersection(y), [db.ps[i] for i in preintent])
-        # print stack[-3:]
-        # print intent, prevint
-        # print "PREVINT",prevint, intent
         new_att = [i for i in intent if i not in prevint][-1]
-        # print "NEWATT", new_att
-        # preextent = # 
+        
         preextent = prevext.intersection(db.ps[new_att])
         AI = Partition([])
 
         match = [i in preintent for i in range(db.n_atts)]
         
-        # if match in db.non_fds:
-        #     print ''
-        #     shorts+=1
-        #     stack.append((preintent, preextent, AI))
-        #     print '>',intent
-        #     enum.next(intent)
-        #     print '<',intent
-        #     continue
-
-        
-        # closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and pat_leq(preextent, j)])
         go_on = match not in db.non_fds
         shorts += match in db.non_fds
-        # print "AI", AI, AI.is_empty()
-        # AI = None
-        # print '\t', closed_preintent
+
         while go_on:
             closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
             if not bool(closed_preintent):
@@ -165,7 +150,9 @@ def execute():
             if AII == closed_preintent:
                 # print ':)'
 
-                L.append((preintent, closed_preintent.union(preintent)))
+                # L.append((preintent, closed_preintent.union(preintent)))
+                fd_store.add(preintent, closed_preintent.union(preintent)-preintent)
+                    
                 
                 if max(intent) < min(closed_preintent):
                     intent = sorted(closed_preintent.union(preintent))
@@ -181,9 +168,7 @@ def execute():
                 preextent.add(new_obj)
                 for i, j, k in stack:
                     j.add(new_obj)                
-                # closed_preintent = set([i for i in closed_preintent if preextent.leq(db.ps[i])])
 
-            # go_on = bool(closed_preintent)
 
         if len(intent) < len(preintent) and any(i < new_att for i in preintent):
             intent = sorted(preintent)
@@ -195,13 +180,22 @@ def execute():
     # print L
     print len(L)
     print iterations 
-    print "SAMPLE", len(list(db.sample)), "REAL", len(G), "INCREMENTS:", db.increments
+    print "SAMPLE", len(list(db.sample)), "INCREMENTS:", db.increments
     print 'Time:', time.time()-t0
     print "SHORTS:", shorts
     print "SHORTS2:", shorts2
-    # for ri, (i, j) in enumerate(L):
-    #     print ri+1, i, j-i
-    print 
+    fds = list(fd_store.read_fds())
+    print len(fds)
+    # fd_store.print_tree()
+    # for i in fds:
+    #     print i
+
+    out = []
+    for ri, (lhs, rhs) in enumerate(L):
+         out.append([sorted([db.partitions[i].idx for i in lhs]), sorted([db.partitions[i].idx for i in rhs if i not in lhs])])
+    out.sort(key=lambda k: (len(k[0]), len(k[1]), tuple(k[0]), tuple(k[1])))
+    with open(file_input_path+'.ae.out.json', 'w') as fout:
+        json.dump(out, fout)
     #print cache
 
 if __name__ == "__main__":

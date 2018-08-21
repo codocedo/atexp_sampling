@@ -44,12 +44,15 @@ class Representation(object):
         raise NotImplementedError
     def add(self, value):
         self.desc.add(value)
+    def is_top(self):
+        raise NotImplementedError
 
 class Partition(Representation):
     '''
     Partiton representation, split partitions
     list of sets
     '''
+    N_TUPLES = 0
     def __init__(self, desc):
         '''
         Sort and split the partition
@@ -65,7 +68,8 @@ class Partition(Representation):
         self.idx = idx
 
     @staticmethod
-    def from_lst( lst):
+    def from_lst(lst):
+        Partition.N_TUPLES = max(len(lst), Partition.N_TUPLES)
         hashes = {}
         for i, j in enumerate(lst):
             hashes.setdefault(j, set([])).add(i)
@@ -135,12 +139,17 @@ class Partition(Representation):
             else:
                 return False
         return True
+    def is_top(self):
+        if len(self.desc) == 1 and len(self.desc[0]) == Partition.N_TUPLES:
+            return True
+        return False
     
 
 class PairSet(Representation):
     '''
     Pairset representation, set of tuple pairs
     '''
+    N_TUPLES = 0
     @staticmethod
     def from_lst(lst):
         '''
@@ -148,6 +157,7 @@ class PairSet(Representation):
         [1,2,1,2] generates the pairs [(0,2), (1,3)]
         Actually, pairs are the transitive closure of the equivalence relation
         '''
+        Pairset.N_TUPLES = max(len(lst), Pairset.N_TUPLES)
         hashes = {}
         for i, j in enumerate(lst):
             hashes.setdefault(j, set([])).add(i)
@@ -167,6 +177,9 @@ class PairSet(Representation):
 
     def pick_sample_from_difference(self, other, samples):
         samples.append(next(iter(self.desc - other.desc)))
+
+    def is_top(self):
+        return len(self.desc) == binomial(PairSet.N_TUPLES, 2)
         
     
 
@@ -240,6 +253,11 @@ class Database(object):
         if self._atts is None:
             self._atts = range(len(self.ctx))
         return self._atts
+
+    def get_top_atts(self):
+        for i, j in self.ps.items():
+            if j.is_top():
+                yield i 
 
 import random
 class Expert(Database):
@@ -348,6 +366,12 @@ class Expert(Database):
         self._ps =  {i: self.TRep(j.sample(self.sample)) for i, j in enumerate(self.partitions)}
         
         return new_point
+    
+    def get_top_atts(self):
+        ps = self.ps
+        for i, j in self._real_ps.items():
+            if j.is_top():
+                yield i 
 
 
 
