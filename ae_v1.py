@@ -31,7 +31,7 @@ def execute():
         stack=stack,
         split=SPLIT
     )
-    db.read_csv(file_input_path, separator=',')
+    db.read_csv(file_input_path, separator=';')
     
 
     fd_store = FDList(db.n_atts) # FD DATABASE
@@ -141,9 +141,6 @@ def execute():
                 break
             # prefix = [i in preintent for i in range(max(preintent)+1)]
             # selected_samples = list(db.non_fds.read_prefix(prefix))
-            if bool(preextent.desc):
-                print preextent
-                exit()
             # AJJ = closed_preintent.union(preintent)
             # print prevAI
             # print '*',
