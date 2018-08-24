@@ -5,13 +5,99 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class FDCollection(object):
+    def __init__(self, n_atts):
+        self.n_atts = n_atts
+    def add(self, lhs, rhss):
+        raise NotImplementedError
+    def l_close(self, pat):
+        raise NotImplementedError
+    @property
+    def n_fds(self):
+        raise NotImplementedError
+    def read_fds(self):
+        raise NotImplementedError
+
+class FDList(FDCollection):
+    def __init__(self, n_atts):
+        super(FDList, self).__init__(n_atts)
+        self.L = []
+    def add(self, lhs, rhss):
+        self.L.append( (lhs, rhss) )
+    def l_close(self, pat):
+        newpat = set(pat)
+        
+        complement = set([])
+        while True:
+            if len(newpat) == self.n_atts:
+                break
+            subparts = [con for ant, con in self.L if len(ant) < len(newpat) and ant.issubset(newpat)]
+            if bool(subparts):
+                complement = reduce(set.union, subparts)
+                if complement.issubset(newpat):
+                    break
+                else:
+                    newpat.update(complement)
+            else:
+                break
+        return newpat
+    @property
+    def n_fds(self):
+        return len(self.L)
+    def read_fds(self):
+        for i in self.L:
+            yield i
+
+class FDOList(FDList):
+    def add(self, lhs, rhss):
+        super(FDOList, self).add(lhs, rhss)
+        self.L.sort(key = lambda (lhs, rhs):  len(lhs))
+        # i=0
+        # for i, (olhs, orhs) in enumerate(self.L):
+        #     if len(olhs) <= len(lhs):
+        #         break
+        # self.L.insert(i, (lhs, rhss))
+        # print self.L
+    def l_close(self, pat):
+        newpat = set(pat)
+        
+        complement = set([])
+        while True:
+            if len(newpat) == self.n_atts:
+                break
+            subparts = []
+            for ant, con in self.L:
+                if len(newpat) <= len(ant):
+                    break
+                if len(ant) < len(newpat) and ant.issubset(newpat):
+                    subparts.append(con)
+                
+            # subparts = [con for ant, con in self.L ]
+            if bool(subparts):
+                complement = reduce(set.union, subparts)
+                if complement.issubset(newpat):
+                    break
+                else:
+                    newpat.update(complement)
+            else:
+                break
+        return newpat
+        
+    
 class FDNode(object):
     def __init__(self, att=-1, n_atts=0):
         self.att = att
         # self.idx = [True]*n_atts
         self.link = {}
         self.parent = None
-        self.rhs=[False]*n_atts
+        self._rhs=[False]*n_atts
+        self.active = False
+    
+    def set_rhss(self, rhss):
+        for i in rhss:
+            self._rhs[i] = True
+        self.active = True
+
     
     def get_children(self):
         for i in sorted(self.link.keys()):
@@ -19,13 +105,13 @@ class FDNode(object):
 
     def invalidate(self, invalid_rhss):
         for i in invalid_rhss:
-            self.rhs[i] = False
+            self._rhs[i] = False
 
     def __repr__(self):
         return str("<FDNode>{}=>{}".format(self.get_lhs(), str(self.get_rhss())))
 
     def get_rhss(self):
-        return [i for i, j in enumerate(self.rhs) if j]
+        return [i for i, j in enumerate(self._rhs) if j]
 
     def get_lhs(self):
         base = set([self.att])
@@ -37,8 +123,8 @@ class FDNode(object):
         return base
 
     def flip(self):
-        for i in range(len(self.rhs)):
-            self.rhs[i] = not self.rhs[i]
+        for i in range(len(self._rhs)):
+            self._rhs[i] = not self._rhs[i]
 
     def add_child(self, child):
         # self.idx[child.att] = False
@@ -46,7 +132,7 @@ class FDNode(object):
         child.parent = self
 
 
-class FDTree(object):
+class FDTree(FDCollection):
     '''
     Keeps a set of FDs stored in a tree.
     Implemented using descriptions found in [1]
@@ -57,8 +143,9 @@ class FDTree(object):
         contained in the functional dependencies to be stored.
         The tree only holds a reference to the root node.
         '''
-        self.n_atts = n_atts
+        super(FDTree, self).__init__(n_atts)
         self.root = FDNode(n_atts=self.n_atts)
+        self._n_fds = 0
 
     def _level_and_recurse(self, current_node, sought_depth, depth=0):
         '''
@@ -124,7 +211,7 @@ class FDTree(object):
 
     def _find_and_recurse(self, current_node, lhs):
         
-        if any(current_node.rhs):
+        if current_node.active:
             yield current_node.get_rhss()
 
         if not bool(lhs) or not bool(current_node.link) or max(current_node.link.keys()) < lhs[-1]:
@@ -149,7 +236,9 @@ class FDTree(object):
         rhs -- attribute id in the right hand side
         '''
         
-        
+        if len(lhs) == self.n_atts:
+            return
+        # print "LHS", lhs
         slhs = sorted(lhs, reverse=True)
         for old_rhs in self._find_and_recurse(self.root,  slhs):
             # print '\t\t',old_lhs, old_rhs
@@ -171,6 +260,7 @@ class FDTree(object):
         new_node = None
         current_node = self.root
         s_lhs = sorted(lhs,reverse=False)
+        self._n_fds += 1
 
         while bool(s_lhs):
             next_att = s_lhs.pop()
@@ -181,8 +271,8 @@ class FDTree(object):
                 new_node = FDNode(att=next_att, n_atts=self.n_atts)
                 current_node.add_child(new_node)
                 current_node = new_node
-        for rhs in rhss:
-            current_node.rhs[rhs] = True
+        current_node.set_rhss(rhss)
+        
         return new_node
 
     def _read_and_recurse(self, current_node, lhs):
@@ -192,7 +282,7 @@ class FDTree(object):
         current_node -- current node in the navigation
         lhs -- current left hand side
         '''
-        if any(current_node.rhs):
+        if current_node.active:
             yield (lhs, current_node.get_rhss())
 
         for att in sorted(current_node.link.keys()):
@@ -243,6 +333,7 @@ class FDTree(object):
         Remove FD lhs->rhs from the FDTree
 
         '''
+        self._n_fds -= 1
         current_node = self.root
         s_lhs = sorted(lhs,reverse=True)
         while bool(s_lhs):
@@ -253,3 +344,15 @@ class FDTree(object):
                 raise KeyError
         
         current_node.rhs[rhs] = False
+    def l_close(self, pat):
+        newpat = set(pat)
+
+        while True:
+            complement = reduce(set.union, [set([])]+[rhs for rhs in self.find_rhss(newpat)])
+            if complement.issubset(newpat):
+                break
+            newpat.update(complement)
+        return newpat
+    @property
+    def n_fds(self):
+        return self._n_fds

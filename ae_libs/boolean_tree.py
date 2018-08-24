@@ -78,10 +78,29 @@ class BooleanTree(object):
                 return False
             current_node = current_node[i]
         return True
+
+    def read_prefix(self, prefix):
+        current_node = self.root
+        for i in prefix:
+            if current_node[i] is None:
+                return 
+            current_node = current_node[i]
+        for i in self.recursive_read(current_node, [], False):
+            yield i
+
     def __len__(self):
         return self.n_elements
     def __repr__(self):
         return "<BooleanTree>::{}".format(list(self.read(single_read=False)))
+    # def explode_prefix(self, prefix):
+    #     current_node = self.root
+    #     for i in prefix:
+    #         if current_node[i] is None:
+    #             return 
+    #         current_node = current_node[i]
+    #     for i in self.recursive_read(current_node, [], False):
+    #         yield i
+
 
     
 

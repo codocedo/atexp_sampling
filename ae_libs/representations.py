@@ -1,8 +1,12 @@
+import random
 from itertools import combinations
 from math import factorial as fac
 from ae_libs.boolean_tree import BooleanTree
 
+
+
 def binomial(x, y):
+    print "BINOMIAL", x, y
     try:
         binom = fac(x) // fac(y) // fac(x - y)
     except ValueError:
@@ -63,6 +67,12 @@ class Partition(Representation):
         if len(desc) == 0:
             desc.append(set([]))
         super(Partition, self).__init__(desc)
+        self._nparts = None
+    @property
+    def nparts(self):
+        if self._nparts is None:
+            self._nparts = len(self.desc) + Partition.N_TUPLES - (sum([len(i) for i in self.desc]))
+        return self._nparts
         
     def set_idx(self, idx):
         self.idx = idx
@@ -86,6 +96,7 @@ class Partition(Representation):
             for t in k:
                 T[t] = i
             S[i] = set([])
+        
         for i, k in enumerate(other.desc):
             for t in k:
                 if T.get(t, None) is not None:
@@ -95,24 +106,63 @@ class Partition(Representation):
                     if len(S[T[t]]) > 1:
                         new_desc.append(S[T[t]])
                     S[T[t]] = set([])
+
         return Partition(new_desc)
+
+
+    # def leq(self, other):
+    #     '''
+    #     Procedure STRIPPED_PRODUCT defined in [1]
+    #     '''
+    #     if other.nparts > self.nparts:
+    #         return False
+    #     T = {}
+
+    #     for i, k in enumerate(other.desc):
+    #         for t in k:
+    #             T[t] = i
+        
+    #     for i, k in enumerate(self.desc):
+    #         it = iter(k)
+    #         mvalue = T.get(next(it), -1)
+    #         for t in it:
+    #             if T.get(t, -2) != mvalue:
+    #                 return False
+    #     return True
+
+
     def leq(self, other):
+        # print self.nparts, other.nparts
+        if other.nparts > self.nparts:
+            return False
         for i in self.desc:
-            if not any(i.issubset(j) for j in other.desc):
+            go_on = False
+            for j in other.desc:
+                if len(i) > len(j):
+                    return False
+                if i.issubset(j):
+                    go_on=True
+                    break
+            if not go_on:
                 return False
         return True
+        # for i in self.desc:
+        #     if not any(i.issubset(j) for j in other.desc):
+        #         return False
+        # return True
 
     def sample(self, sample):
-        # print self, sample,
         sampled = set([])
         for i, j in sample:
             for s in self.desc:
                 if i in s and j in s:
                     sampled.add((i,j))
                     break
-        # print sampled
+                elif i in s or j in s:
+                    break
         return sampled
-        # return PairSet(self.desc.intersection(sample))
+
+
     def pick_sample_from_difference(self, other, samples):
         # print "PICK", self, other, samples
         
@@ -169,6 +219,7 @@ class PairSet(Representation):
 
     def intersection(self, other):
         return PairSet(self.desc.intersection(other.desc))
+
     def leq(self, other):
         return self.desc.issubset(other.desc)
 
@@ -178,8 +229,8 @@ class PairSet(Representation):
     def pick_sample_from_difference(self, other, samples):
         samples.append(next(iter(self.desc - other.desc)))
 
-    def is_top(self):
-        return len(self.desc) == binomial(PairSet.N_TUPLES, 2)
+    # def is_top(self):
+    #     return len(self.desc) == binomial(PairSet.N_TUPLES, 2)
         
     
 
@@ -259,7 +310,7 @@ class Database(object):
             if j.is_top():
                 yield i 
 
-import random
+
 class Expert(Database):
     def __init__(self, stack, split=1.0):
         Database.__init__(self)
@@ -301,19 +352,18 @@ class Expert(Database):
         '''
         Returns the sampeld object representations
         '''
+        
         if self._ps is None:
-            self.possible_pairs = binomial(self.n_tuples, 2)
+            self.possible_pairs = self.n_tuples**2/2-self.n_tuples/2
             self.sample_size = int(self.possible_pairs*self.split)
             self.sample = []
             for pi, pair in enumerate(self.get_next_pair()):
                 if pi == self.sample_size:
                     break
                 self.sample.append(pair)
-
             self._real_ps = {i: j for i, j in enumerate(self.partitions)}
-            
             self._ps =  {i: self.TRep(j.sample(self.sample)) for i, j in enumerate(self.partitions)}
-
+        
         return self._ps
     
 
@@ -324,7 +374,7 @@ class Expert(Database):
         return new_intent, new_extent
 
     def check(self, new_att, prevint, closed_preintent, prevAI):
-
+        
         if prevAI.is_empty():
             '''
             Search up the stack if there is a pattern we can partially use
@@ -337,33 +387,68 @@ class Expert(Database):
             prevAI.desc = self.stack[idx][2].intersection(
                 reduce(
                     lambda x, y: x.intersection(y),
-                    (self._real_ps[i] for i in prevint if i not in self.stack[idx][0])
+                    (self._real_ps[i] for i in sorted(prevint, reverse=True) if i not in self.stack[idx][0])
                 )
             ).desc #A^I
 
         AI = prevAI.intersection(self._real_ps[new_att])
-        AII = set([j for j in closed_preintent if AI.leq(self._real_ps[j])]) # A^II
+        AII = set([j for j in closed_preintent if AI.leq(self._real_ps[j])]) # AII complement
         return AII, AI
 
+
+    def increment_sample(self, AI, AII, closed_preintent, preintent, preextent):
         
-    def increment_sample(self, AI, AII, closed_preintent, preintent):
-        
+        # print ''
+        # print AI
+        # print '\t',closed_preintent, AII
+
         self.increments += 1
 
-        sample_target = next(iter(closed_preintent - AII))
-        new_point = None
-        for s1 in reversed(AI.desc):
-            for i, j in combinations(s1, 2):
-                if any(i in s2 and j in s2 for s2 in reversed(self._real_ps[sample_target].desc)):
-                    continue
-                else:
-                    new_point = (i,j) if i<j else (j,i)
-                    break
-            if new_point is not None:
-                break
         
+        # it = iter(sorted(closed_preintent - AII, key=lambda k: len(self._ps[k].desc), reverse=True))
+        it = sorted(closed_preintent - AII, reverse=True)#, key=lambda k: len(self._ps[k].desc), reverse=True))
+        # random.shuffle(it)
+        it = iter(it)
+        # print sorted([(len(self._ps[i].desc) , i) for i in closed_preintent - AII], reverse=False)
+        # print closed_preintent - AII
+        go_on = True
+        while go_on:
+            # NOTICE THAT THE NEXT ITERATOR SHOULD NEVER REACH STOPITERATOR EXCEPTION
+            sample_target = next(it)
+            
+            new_point = None
+
+            # REVERSED AS PARTITIONS ARE SORTED FROM LARGER TO SMALLER COMPONENTS
+            # SMALLER COMPONENTS HAVE A BETTER CHANCE OF BEING UNIQUE TO THE PARTITION
+            for s1 in reversed(AI.desc):
+                s1 = list(s1)
+                random.shuffle(s1)
+                for i, j in combinations(s1, 2):
+
+                    choose = True
+                    if (i,j) in self.sample:
+                        choose=False
+                        continue
+                    for s2 in self._real_ps[sample_target].desc:
+                        if i in s2 and j in s2:
+                            choose = False
+                            break
+                        elif i in s2 or j in s2:
+                            break
+                    if choose:
+                        break
+                    # if any(i in s2 and j in s2 for s2 in reversed(self._real_ps[sample_target].desc)):
+                    #     continue
+                if choose:
+                    new_point = (i,j) if i<j else (j,i)
+                    go_on = False
+                    break
+                # if new_point is not None:
+                #     break
+        # print '\t\t NEW POINT:', (i,j) 
         self.sample.append(new_point)
         self._ps =  {i: self.TRep(j.sample(self.sample)) for i, j in enumerate(self.partitions)}
+        
         
         return new_point
     
@@ -379,11 +464,73 @@ class ExpertSampler(Expert):
     def __init__(self, stack, split=1.0):
         super(ExpertSampler, self).__init__(stack, split)
         self.non_fds = BooleanTree()
-    def increment_sample(self, AI, AII, closed_preintent, preintent):
-        t1, t2 = super(ExpertSampler, self).increment_sample(AI, AII, closed_preintent, preintent)
-        match = [self._data[t1][i]==self._data[t2][i] for i in range(self.n_atts)]
-        self.non_fds.append(match)
-        return (t1, t2)
+
+
+    def increment_sample(self, AI, AII, closed_preintent, preintent, preextent):
+        
+        # print ''
+        # print AI
+        # print '\t',closed_preintent, AII
+
+        self.increments += 1
+
+        
+        # it = iter(sorted(closed_preintent - AII, key=lambda k: len(self._ps[k].desc), reverse=True))
+        # it = list(closed_preintent - AII)#, key=lambda k: len(self._ps[k].desc), reverse=True))
+        # random.shuffle(it)
+        # it = iter(it)
+        
+
+        # print sorted([(len(self._ps[i].desc) , i) for i in closed_preintent - AII], reverse=False)
+        # print closed_preintent - AII
+
+        # GENERATE X SAMPLES
+
+        negative_atts = closed_preintent - AII
+        go_on = True
+        while go_on:
+            
+            new_point = None
+            new_ponits = []
+
+            # REVERSED AS PARTITIONS ARE SORTED FROM LARGER TO SMALLER COMPONENTS
+            # SMALLER COMPONENTS HAVE A BETTER CHANCE OF BEING UNIQUE TO THE PARTITION
+            for s1 in reversed(AI.desc):
+                s1 = list(s1)
+                random.shuffle(s1)
+                for i, j in combinations(s1, 2):
+                    new_point = (i,j) if i<j else (j,i)
+                    choose = True
+                    match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+                    
+                    # if match in self.non_fds:
+                    if new_point in self.sample:
+                        choose=False
+                        continue
+                    
+                    self.non_fds.append(match)
+                    
+                    # if any(not match[s] for s in negative_atts):
+                    print '\n', max(negative_atts), match
+                    if not match[max(negative_atts)]:
+                        # print '\n',sample_target, match, '::', match[sample_target]
+                        break
+                    else:
+                        choose = False
+
+                if choose:                    
+                    go_on = False
+                    break
+
+        self.sample.append(new_point)
+
+        for i in (a for a, t in enumerate(match) if t):
+            self._ps[i].desc.add(new_point)
+        
+        return new_point
+        # '''
+
+        
     
 
     @property

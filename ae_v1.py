@@ -6,7 +6,7 @@ from itertools import combinations
 
 from ae_libs.enumerations import LectiveEnum
 from ae_libs.representations import PairSet, Partition, Expert, Top, ExpertSampler
-from ae_libs.fd_tree import FDTree
+from ae_libs.fd_tree import FDTree, FDList, FDOList
 
 
 SPLIT = 0
@@ -14,38 +14,6 @@ SPLIT = 0
 def read_csv(path, separator=','):
     mat = [map(str, line.replace('\n','').split(separator)) for line in open(path, 'r').readlines()]
     return [[row[j] for row in mat] for j in range(len(mat[0]))]
-
-
-def l_close(pat, L):
-    newpat = set(pat)
-    
-    complement = set([])
-    while True:
-        subparts = [con for ant, con in L if len(ant) < len(newpat) and ant.issubset(newpat)]
-        if bool(subparts):
-            complement = reduce(set.union, subparts)
-            if complement.issubset(newpat):
-                break
-            else:
-                newpat.update(complement)
-        else:
-            break
-    return newpat
-
-def l2_close(pat, fd_store):
-    newpat = set(pat)
-    # fds = list(fd_store.read_fds())
-    
-    # print "FIND FOR ", pat
-    
-    while True:
-        complement = reduce(set.union, [set([])]+[rhs for rhs in fd_store.find_rhss(newpat)])
-        if complement.issubset(newpat):
-            break
-        newpat.update(complement)
-    return newpat
-            
-    #     exit()
 
     
 def execute():
@@ -63,40 +31,46 @@ def execute():
         stack=stack,
         split=SPLIT
     )
-    db.read_csv(file_input_path)
+    db.read_csv(file_input_path, separator=',')
+    
 
-    L = [] # FD DATABASE
-    fd_store = FDTree(db.n_atts)
-
+    fd_store = FDList(db.n_atts) # FD DATABASE
+    # fd_store = FDTree(db.n_atts) # FD DATABASE
+    print "FD_STORE"
     rhs = set(db.get_top_atts())
     if bool(rhs):
-        L = [(set([]), rhs)]
-        for r in rhs:
-            fd_store.add(set([]), r)
-    
+        fd_store.add(set([]), rhs)
+    print "FIRST FD"
     # Enumeration of candidates
     enum = LectiveEnum(len(db.atts)-1)
-
+    print "LECTIVE"
     # First candidate
     intent = []
     enum.next(intent)
+    print "FIRST"
     iterations = 0
 
     t0 = time.time()
 
     shorts = 0
     shorts2 = 0
+    wit = 0
+    print '({:<5}|{:<5}|{:<5}|{:<5}|{:<5}) {:<40}'.format("FDs", "SAMP", "QUERY", "IT","NFDs", "CURRENT_INTENT")
     while intent != [-1]:
         # print "\nSTACK",[i[0] for i in stack]
-        # preintent = l_close(intent, L)
-        preintent = l2_close(intent, fd_store)
+        # preintent = l_close(intent, 
+        # print intent
+        # preintent = l2_close(intent, fd_store)
+        preintent = fd_store.l_close(intent)
         
         
         s_preintent = sorted(preintent)
         
         # shorts2 += [i in intent for i in range(db.n_atts)] in db.non_fds
 
-        print '\r {:<30}'.format(intent[-20:]),
+        # print '\r ({:<5}/{:<5}) {:<40}...{:<40}'.format(fd_store.n_fds, len(db.sample), intent[:20],intent[-20:]),
+        
+        print '\r({:<5}|{:<5}|{:<5}|{:<5}|{:<5}) {:<40}'.format(fd_store.n_fds, len(db.sample), shorts2, iterations,db.non_fds.n_elements, intent[-20:]),
         # print stack
         sys.stdout.flush()
         
@@ -133,17 +107,54 @@ def execute():
         AI = Partition([])
 
         match = [i in preintent for i in range(db.n_atts)]
+
         
         go_on = match not in db.non_fds
         shorts += match in db.non_fds
+        # prefix = [i in preintent for i in range(max(preintent)+1)]
+        # if go_on:
+        #     selected_samples = list(db.non_fds.read_prefix(prefix))
+        #     if bool(selected_samples):
+        #         reduced_sample = selected_samples[0]
+        #         for b in selected_samples:
+        #             reduced_sample = [i and j for i, j in zip(reduced_sample,b)]
+        #             db.non_fds.append(prefix+reduced_sample)
 
+        #         # red = reduce(lambda x,y : x and y, selected_samples)
+        #         if sum(reduced_sample) == 0:
+        #             go_on = False
+        #             shorts+=1
+        #         # print prefix+   reduced_sample
+                
+        #             # for i in selected_samples:
+        #             #     print '\n', preintent, match, prefix, "RED",reduced_sample
+        #             #     print '\t', i
+        checked = False
         while go_on:
+            wit+=1
             closed_preintent = set([i for i, j in db.ps.items() if i not in preintent and preextent.leq(j)])
+            # print closed_preintent,
             if not bool(closed_preintent):
+                if not checked:
+                    shorts+=1
+                # go_on = False
                 break
+            # prefix = [i in preintent for i in range(max(preintent)+1)]
+            # selected_samples = list(db.non_fds.read_prefix(prefix))
+            if bool(preextent.desc):
+                print preextent
+                exit()
             # AJJ = closed_preintent.union(preintent)
             # print prevAI
-            AII, AI = db.check(new_att, prevint, closed_preintent, prevAI)
+            # print '*',
+            # sys.stdout.flush()
+            if not checked:
+                AII, AI = db.check(new_att, prevint, closed_preintent, prevAI)
+                checked = True
+                # if not bool(AII):
+                shorts2 += 1
+            # print '*',
+            # sys.stdout.flush()
             # print prevAI
             # print ''
             # print AII, closed_preintent
@@ -152,18 +163,17 @@ def execute():
 
                 # L.append((preintent, closed_preintent.union(preintent)))
                 fd_store.add(preintent, closed_preintent.union(preintent)-preintent)
-                    
                 
                 if max(intent) < min(closed_preintent):
                     intent = sorted(closed_preintent.union(preintent))
                 else:
                     enum.last(intent)
-                go_on=False
+                # go_on=False
                 break
 
             else:
-
-                new_obj = db.increment_sample(AI, AII, closed_preintent, preintent)
+                
+                new_obj = db.increment_sample(AI, AII, closed_preintent, preintent, preextent)
 
                 preextent.add(new_obj)
                 for i, j, k in stack:
@@ -178,24 +188,22 @@ def execute():
 
     print
     # print L
-    print len(L)
-    print iterations 
+    print "N_FDS:", fd_store.n_fds
+    print "ITERATIONS:", iterations 
     print "SAMPLE", len(list(db.sample)), "INCREMENTS:", db.increments
     print 'Time:', time.time()-t0
     print "SHORTS:", shorts
-    print "SHORTS2:", shorts2
-    fds = list(fd_store.read_fds())
-    print len(fds)
-    # fd_store.print_tree()
-    # for i in fds:
-    #     print i
-
+    print "QUESTIONS_ASKED:", shorts2
+    print "WHILES:", wit
+    
     out = []
-    for ri, (lhs, rhs) in enumerate(L):
+    for ri, (lhs, rhs) in enumerate(fd_store.read_fds()):
          out.append([sorted([db.partitions[i].idx for i in lhs]), sorted([db.partitions[i].idx for i in rhs if i not in lhs])])
     out.sort(key=lambda k: (len(k[0]), len(k[1]), tuple(k[0]), tuple(k[1])))
     with open(file_input_path+'.ae.out.json', 'w') as fout:
         json.dump(out, fout)
+    # for i, j in db.ps.items():
+    #     print i, [(id(t),t) for t in j.desc]
     #print cache
 
 if __name__ == "__main__":
