@@ -1,5 +1,7 @@
 import random
-from itertools import combinations
+import sys
+import csv
+from itertools import combinations, product
 from math import factorial as fac
 from ae_libs.boolean_tree import BooleanTree
 
@@ -27,6 +29,10 @@ class Top(object):
     @staticmethod
     def is_empty():
         return False
+    @staticmethod
+    def update(obj):
+        pass
+
 
 class Representation(object):
     '''
@@ -48,6 +54,8 @@ class Representation(object):
         raise NotImplementedError
     def add(self, value):
         self.desc.add(value)
+    def update(self, obj):
+        self.desc.update(obj)
     def is_top(self):
         raise NotImplementedError
 
@@ -110,46 +118,56 @@ class Partition(Representation):
         return Partition(new_desc)
 
 
-    # def leq(self, other):
-    #     '''
-    #     Procedure STRIPPED_PRODUCT defined in [1]
-    #     '''
+    def leq(self, other, cache):
+        '''
+        Procedure STRIPPED_PRODUCT defined in [1]
+        '''
+        if len(self.desc) == 1 and len(self.desc[0]) == 0:
+            return True
+        # if other.nparts > self.nparts:
+        #     return False
+        T = {}
+
+        for i, k in enumerate(other.desc):
+            for t in k:
+                T[t] = i
+        
+        for i, k in enumerate(self.desc):
+            
+            it = iter(k)
+            ti = next(it)
+            
+
+            mvalue = T.get(ti, -1)
+            fpair = [ti]
+            for ti in it:
+                if T.get(ti, -2) != mvalue:
+                    fpair.append(ti)
+                    cache.append(tuple(fpair))
+                    
+                    return False
+        return True
+
+
+    # def leq(self, other, cache):
+    #     # print self.nparts, other.nparts
     #     if other.nparts > self.nparts:
     #         return False
-    #     T = {}
-
-    #     for i, k in enumerate(other.desc):
-    #         for t in k:
-    #             T[t] = i
-        
-    #     for i, k in enumerate(self.desc):
-    #         it = iter(k)
-    #         mvalue = T.get(next(it), -1)
-    #         for t in it:
-    #             if T.get(t, -2) != mvalue:
+    #     for i in self.desc:
+    #         go_on = False
+    #         for j in other.desc:
+    #             if len(i) > len(j):
     #                 return False
+    #             if i.issubset(j):
+    #                 go_on=True
+    #                 break
+    #         if not go_on:
+    #             return False
     #     return True
-
-
-    def leq(self, other):
-        # print self.nparts, other.nparts
-        if other.nparts > self.nparts:
-            return False
-        for i in self.desc:
-            go_on = False
-            for j in other.desc:
-                if len(i) > len(j):
-                    return False
-                if i.issubset(j):
-                    go_on=True
-                    break
-            if not go_on:
-                return False
-        return True
-        # for i in self.desc:
-        #     if not any(i.issubset(j) for j in other.desc):
-        #         return False
-        # return True
+    #     # for i in self.desc:
+    #     #     if not any(i.issubset(j) for j in other.desc):
+    #     #         return False
+    #     # return True
 
     def sample(self, sample):
         sampled = set([])
@@ -264,12 +282,20 @@ class Database(object):
             self._n_tuples = len(self._data)
         return self._n_tuples
 
-    def read_csv(self, path, separator=','):
+    def read_csv(self, path, separator=',', has_headers=False, quotechar='"'):
         '''
         Read csv into self._data
         self._data contains the original parsed file
         '''
-        self._data = [map(str, line.replace('\n','').split(separator)) for line in open(path, 'r').readlines()]
+        self._data = []
+        with open(path, 'r') as csvfile:
+            reader = csv.reader(csvfile, delimiter=separator, quotechar=quotechar)
+            for line in reader:
+                self._data.append(map(str, line))
+        if has_headers:
+            del self._data[0]
+        
+        # print self._data
 
     @property
     def ctx(self):
@@ -312,12 +338,11 @@ class Database(object):
 
 
 class Expert(Database):
-    def __init__(self, stack, split=1.0):
+    def __init__(self, stack):
         Database.__init__(self)
         self.sample = set([])
         self._real_ps = None
         self.increments = 0
-        self.split = split
         self._smap = None
         self.TExpert = Partition
         self.stack = stack
@@ -354,13 +379,9 @@ class Expert(Database):
         '''
         
         if self._ps is None:
-            self.possible_pairs = self.n_tuples**2/2-self.n_tuples/2
-            self.sample_size = int(self.possible_pairs*self.split)
+            # self.possible_pairs = self.n_tuples**2/2-self.n_tuples/2
+            # self.sample_size = int(self.possible_pairs*self.split)
             self.sample = []
-            for pi, pair in enumerate(self.get_next_pair()):
-                if pi == self.sample_size:
-                    break
-                self.sample.append(pair)
             self._real_ps = {i: j for i, j in enumerate(self.partitions)}
             self._ps =  {i: self.TRep(j.sample(self.sample)) for i, j in enumerate(self.partitions)}
         
@@ -392,7 +413,12 @@ class Expert(Database):
             ).desc #A^I
 
         AI = prevAI.intersection(self._real_ps[new_att])
-        AII = set([j for j in closed_preintent if AI.leq(self._real_ps[j])]) # AII complement
+        cache = []
+        AII = set([j for j in closed_preintent if AI.leq(self._real_ps[j], cache)]) # AII complement
+        # for i, j in cache:
+        #     match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+        #     self.non_fds.append(match)
+        # print cache
         return AII, AI
 
 
@@ -459,79 +485,134 @@ class Expert(Database):
                 yield i 
 
 
-
-class ExpertSampler(Expert):
-    def __init__(self, stack, split=1.0):
-        super(ExpertSampler, self).__init__(stack, split)
+class ExpertPartitionSampler(Expert):
+    '''
+    Uses partition pattern structures for checking and providing counterexamples.
+    More efficient with large number of rows and sparse database.
+    '''
+    def __init__(self, stack):
+        super(ExpertPartitionSampler, self).__init__(stack)
         self.non_fds = BooleanTree()
+        self.cache = []
 
+    def check(self, new_att, prevint, closed_preintent, prevAI, preintent):
+        '''
+        Checks if closed_preintent is correct using the real database.
+        This check is performed using pattern structures.
+        Returns AII, the actual closed_preintent, and AI, the pattern structure
+        of the preintent
+        '''
+        x = len([i for i in self.stack if i[2] is None])
+        
+        sys.stdout.flush()
+        if self.stack[-1][2] is None:
+            '''
+            Search up the stack if there is a pattern we can partially use
+            to calculate the current one. In the worst case, we will always
+            use the top.
+            '''
+            # print [i[2] for i in self.stack]
+            for idx in range(len(self.stack)-1, -1, -1):
+                if self.stack[idx][2] is not None:
+                    break
+            # print prevAI, type(prevAI)
+            # exit()
+            # print '\n::', idx
+            for si in range(idx+1, len(self.stack)):
+                # print '\t =>', si
+                self.stack[si][2] = self.stack[si-1][2].intersection(
+                    reduce(
+                        lambda x, y: x.intersection(y),
+                        # (self._real_ps[i] for i in sorted(self.stack[si][0], reverse=True) if i not in self.stack[si-1][0])
+                        (self._real_ps[i] for i in self.stack[si][0].difference(self.stack[si-1][0]))
+                    )
+                )
+        prevAI = self.stack[-1][2]
+
+        AI = prevAI.intersection(self._real_ps[new_att])
+        
+        sys.stdout.flush()
+        AII = set([])
+        match = [True]*self.n_atts
+        self.cache = []
+        old_cache_size = 0
+        
+        for j in closed_preintent:
+            if match[j] and AI.leq(self._real_ps[j], self.cache): # AII complement
+                AII.add(j)
+            if len(self.cache) > old_cache_size:
+                old_cache_size = len(self.cache)
+                i, j = self.cache[-1]
+                match2 = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+
+                for att in range(self.n_atts):
+                    match[att] = match[att] and match2[att]
+                self.non_fds.append(match2)
+                self.non_fds.append(match)
+
+        return AII, AI  
 
     def increment_sample(self, AI, AII, closed_preintent, preintent, preextent):
-        
-        # print ''
-        # print AI
-        # print '\t',closed_preintent, AII
+        self.increments += 1
+        # negative_atts = closed_preintent - AII
+        # print '\n'
+        # print negative_atts, self.cache
+        # if bool(self.cache):
+        new_points = []
+        while bool(self.cache):
+            i,j = self.cache.pop()
+        # i,j  = self.cache.pop()
+        # print self.cache
+            new_point = (i,j) if i<j else (j,i)
 
+            self.sample.append(new_point)
+            match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+
+            for i in (a for a, t in enumerate(match) if t):
+                self._ps[i].desc.add(new_point)
+            new_points.append(new_point)
+        
+        return new_points
+
+
+    def increment_sample_bk(self, AI, AII, closed_preintent, preintent, preextent):
+        """
+        Called in the case AII is not equal to closed_preintent
+        Samples a pair of tuples that takes some attribute in closed_preintent - AII
+        out of closed_preintent.
+        This is done by re-sampling the formal context.
+        """
         self.increments += 1
 
-        
-        # it = iter(sorted(closed_preintent - AII, key=lambda k: len(self._ps[k].desc), reverse=True))
-        # it = list(closed_preintent - AII)#, key=lambda k: len(self._ps[k].desc), reverse=True))
-        # random.shuffle(it)
-        # it = iter(it)
-        
-
-        # print sorted([(len(self._ps[i].desc) , i) for i in closed_preintent - AII], reverse=False)
-        # print closed_preintent - AII
-
-        # GENERATE X SAMPLES
-
         negative_atts = closed_preintent - AII
-        go_on = True
-        while go_on:
-            
-            new_point = None
-            new_ponits = []
 
-            # REVERSED AS PARTITIONS ARE SORTED FROM LARGER TO SMALLER COMPONENTS
-            # SMALLER COMPONENTS HAVE A BETTER CHANCE OF BEING UNIQUE TO THE PARTITION
-            for s1 in reversed(AI.desc):
-                s1 = list(s1)
-                random.shuffle(s1)
-                for i, j in combinations(s1, 2):
-                    new_point = (i,j) if i<j else (j,i)
-                    choose = True
-                    match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
-                    
-                    # if match in self.non_fds:
-                    if new_point in self.sample:
-                        choose=False
-                        continue
-                    
-                    self.non_fds.append(match)
-                    
-                    # if any(not match[s] for s in negative_atts):
-                    print '\n', max(negative_atts), match
-                    if not match[max(negative_atts)]:
-                        # print '\n',sample_target, match, '::', match[sample_target]
-                        break
-                    else:
-                        choose = False
-
-                if choose:                    
-                    go_on = False
-                    break
+        signatures = {}
+        idx = {}
+        for h in range(self.n_tuples):
+            ti = self.sample_map[h]
+            row = self._data[ti]
+            left = tuple([row[att] for att in preintent])
+            right = tuple([row[att] for att in negative_atts])
+            sign = signatures.get(left, None)
+            if sign is None:
+                signatures[left] = right
+                idx[left] = ti
+            elif sign != right:
+                i = ti
+                j = idx[left]
+                new_point = (i,j) if i<j else (j,i)
+                match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+                self.non_fds.append(match)
+                break
+        self._smap = self._smap[h:] + self._smap[:h]
 
         self.sample.append(new_point)
 
         for i in (a for a, t in enumerate(match) if t):
             self._ps[i].desc.add(new_point)
         
-        return new_point
-        # '''
+        return [new_point]
 
-        
-    
 
     @property
     def partitions(self):
@@ -541,23 +622,152 @@ class ExpertSampler(Expert):
         '''
         if self._partitions is None:
             self._partitions = [self.TExpert.from_lst(j) for j in self.ctx]
+            
             map(lambda (i, p): p.set_idx(i), enumerate(self._partitions))
-            orden = lambda p: (self._n_tuples-sum([len(j) for j in p.desc]))+len(p.desc)
-            # print [orden(p) for p in self._partitions]
+            orden = lambda p: (self.n_tuples-sum([len(j) for j in p.desc]))+len(p.desc)
+            
             self._partitions.sort(key=orden)
             for ti, t in enumerate(self._data):
                 new_t = [None]*len(t)
-                # print t
                 for i, j in enumerate(t):
-                    # print '\t', self._partitions[i].idx, '=>', i , ':', j
                     new_t[i] = t[self._partitions[i].idx]
                 for i, j in enumerate(new_t):
                     self._data[ti][i] = j
-                # print t
-                # print ''
-            # print [(orden(p), p.idx) for p in self._partitions]
-            # print self._partitions
-            # exit()
-            # self._partitions = [filter(lambda x:len(x)>1, lst_to_pairs(j)) for j in self.ctx]
-        # print self._partitions
+
+        return self._partitions
+
+class ExpertLinearSampler(Expert):
+    '''
+    Based on linear iterations of the column values,
+    heavily influenced by [1].
+    Most efficient when the number of rows is not very high
+    and the number of FDs in the database is low.
+    '''
+    def __init__(self, stack):
+        super(ExpertLinearSampler, self).__init__(stack)
+        self.non_fds = BooleanTree()
+        self.cache = []
+
+    def check_bk(self, new_att, prevint, closed_preintent, prevAI):
+        
+        if prevAI.is_empty():
+            '''
+            Search up the stack if there is a pattern we can partially use
+            to calculate the current one. In the worst case, we will always
+            use the top.
+            '''
+            for idx in range(len(self.stack)-1, -1, -1):
+                if not self.stack[idx][2].is_empty():
+                    break
+            prevAI.desc = self.stack[idx][2].intersection(
+                reduce(
+                    lambda x, y: x.intersection(y),
+                    (self._real_ps[i] for i in sorted(prevint, reverse=True) if i not in self.stack[idx][0])
+                )
+            ).desc #A^I
+
+        AI = prevAI.intersection(self._real_ps[new_att])
+        
+        AII = set([])
+        match = [True]*self.n_atts
+        self.cache = []
+        old_cache_size = 0
+        # print '\n',
+        # print "CHECKING", closed_preintent
+        for j in closed_preintent:
+            # print '\t', j
+            if match[j] and AI.leq(self._real_ps[j], self.cache): # AII complement
+                
+                AII.add(j)
+            # print '\t\t=>', self.cache
+            if len(self.cache) > old_cache_size:
+                old_cache_size = len(self.cache)
+                i, j = self.cache[-1]
+                match2 = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+                for att in range(self.n_atts):
+                    match[att] = match[att] and match2[att]
+                self.non_fds.append(match2)
+
+        return AII, AI
+
+    def check(self, new_att, prevint, closed_preintent, prevAI, preintent):
+        signatures = {}
+        tuple_map = {}
+        # preintent = prevint + [new_att]
+        preintent = sorted(preintent)
+        members = sorted(closed_preintent)
+        AII = set(range(len(closed_preintent)))
+        
+        
+        for h in range(self.n_tuples):
+            ti = self.sample_map[h]
+            row = self._data[ti]
+            left = tuple([row[att] for att in preintent])
+            right = tuple([row[att] for att in members])
+            sign = signatures.get(left, None)
+            if sign is None:
+                signatures[left] = right
+                tuple_map[left] = ti
+            elif any(sign[idx] != right[idx] for idx in AII):
+                i = ti
+                j = tuple_map[left]
+                new_point = (i,j) if i<j else (j,i)
+                match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+                self.non_fds.append(match)
+                self.cache.append(new_point)
+
+                map(AII.remove, [att for att in AII if sign[att] != right[att]])
+
+            if not bool(AII):
+                break
+        AII = set([members[idx] for idx in AII])
+
+        return AII, None
+
+
+    def increment_sample(self, AI, AII, closed_preintent, preintent, preextent):
+        self.increments += 1
+        negative_atts = closed_preintent - AII
+        # print '\n'
+        # print negative_atts, self.cache
+        # if bool(self.cache):
+        new_points = []
+        while bool(self.cache):
+            i,j = self.cache.pop()
+        # i,j  = self.cache.pop()
+        # print self.cache
+            new_point = (i,j) if i<j else (j,i)
+
+            self.sample.append(new_point)
+            match = [self._data[i][att]==self._data[j][att] for att in range(self.n_atts) ]
+
+            for i in (a for a, t in enumerate(match) if t):
+                self._ps[i].desc.add(new_point)
+            new_points.append(new_point)
+        
+        return new_points
+        # else:
+        #     return [self.increment_sample_bk(AI, AII, closed_preintent, preintent, preextent)]
+    @property
+    def partitions(self):
+        '''
+        Builds the partitions from the context
+        partitions can be either a list of pairs or a list of sets.
+        '''
+        if self._partitions is None:
+            self._partitions = [self.TExpert.from_lst(j) for j in self.ctx]
+            
+            map(lambda (i, p): p.set_idx(i), enumerate(self._partitions))
+            orden = lambda p: (self.n_tuples-sum([len(j) for j in p.desc]))+len(p.desc)
+            
+            self._partitions.sort(key=orden)
+            
+            for ti, t in enumerate(self._data):
+                
+                new_t = [None]*len(t)
+                for i, j in enumerate(t):
+                    new_t[i] = t[self._partitions[i].idx]
+                for i, j in enumerate(new_t):
+                    self._data[ti][i] = j
+
         return self._partitions
