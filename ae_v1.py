@@ -12,6 +12,15 @@ from ae_libs.representations import PairSet, Partition, Expert, Top, ExpertLinea
 from ae_libs.fd_tree import FDTree, FDList, FDOList
 
 
+from math import factorial as fac
+
+def binomial(x, y):
+    try:
+        binom = fac(x) // fac(y) // fac(x - y)
+    except ValueError:
+        binom = 0
+    return binom
+
 FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 
 logging.basicConfig(format=FORMAT, level=logging.INFO)

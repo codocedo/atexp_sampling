@@ -1,9 +1,84 @@
-## NAIVE VERSION
+## OPTIMIZATION 1NAIVE VERSION
+# USES STRIPED PARTITIONS
 
 import csv
 import sys
 from ae_libs.enumerations import LectiveEnum
+# from ae_libs.representations import Partition
 from itertools import product
+
+class Partition(object):
+    '''
+    Partiton representation, split partitions
+    list of sets
+    '''
+    N_TUPLES = 0
+    def __init__(self, desc):
+        '''
+        Sort and split the partition
+        '''
+        self.idx = None
+        desc = [i for i in desc if len(i) > 1]
+        desc.sort(key=lambda k: (len(k), min(k)), reverse=True)
+        if len(desc) == 0:
+            desc.append(set([]))
+        super(Partition, self).__init__(desc)
+        self._nparts = None
+
+    @staticmethod
+    def from_lst(lst):
+        Partition.N_TUPLES = max(len(lst), Partition.N_TUPLES)
+        hashes = {}
+        for i, j in enumerate(lst):
+            hashes.setdefault(j, set([])).add(i)
+
+        return Partition.fix_desc(hashes.values())
+
+    @staticmethod
+    def fix_desc(desc):
+        desc = [i for i in desc if len(i) > 1]
+        desc.sort(key=lambda k: (len(k), min(k)), reverse=True)
+        if len(desc) == 0:
+            desc.append(set([]))
+        return desc
+
+    @staticmethod
+    def intersection(desc, other):
+        '''
+        Procedure STRIPPED_PRODUCT defined in [1]
+        '''
+        # print desc, other
+        new_desc = []
+        T = {}
+        S = {}
+        for i, k in enumerate(desc):
+            for t in k:
+                T[t] = i
+            S[i] = set([])
+        
+        for i, k in enumerate(other):
+            for t in k:
+                if T.get(t, None) is not None:
+                    S[T[t]].add(t)
+            for t in k:
+                if T.get(t, None) is not None:
+                    if len(S[T[t]]) > 1:
+                        new_desc.append(S[T[t]])
+                    S[T[t]] = set([])
+        return Partition.fix_desc(
+            new_desc
+        )
+
+    @staticmethod
+    def leq(desc, other):
+        '''
+        Procedure STRIPPED_PRODUCT defined in [1]
+        '''
+        for i in desc:
+            if not any(i.issubset(j) for j in other):
+                return False
+        return True
+#####
 
 def leq_partitions(d1, d2):
     for pi in d1:
@@ -22,13 +97,13 @@ def intersect_partitions(d1, d2):
 
 def square(X, partitions):
     if bool(X):
-        return reduce(intersect_partitions, [partitions[x] for x in X])
+        return reduce(Partition.intersection, [partitions[x] for x in X])
     else:
-        return [reduce(set.union, partitions[0])]
+        return [set(range(Partition.N_TUPLES))]#[reduce(set.union, partitions[0])]
 
 def square_closure(X, partitions):
     pattern = square(X, partitions)
-    return set([i for i, p in enumerate(partitions) if leq_partitions(pattern, p)])
+    return set([i for i, p in enumerate(partitions) if Partition.leq(pattern, p)])
 
 def make_partition_from_list(lst):
     hashes = {}
@@ -103,16 +178,20 @@ def attribute_exploration_pps(tuples):
     g_prime = []
 
     representations = [[row[j] for row in tuples] for j in U]
-    partitions = map(make_partition_from_list, representations)
+    partitions = map(Partition.from_lst, representations)
     
     X = set([])
     L = []
     pc = PreClosure(L, len(U))
-
+    picked = set([])
+    cycles = 0
     while X != U:
+        cycles += 1
         print "\r{0: <100}".format(','.join(map(str, sorted(X)))),
         sys.stdout.flush()
+
         XJJ = closed_set(X, g_prime, m_prime)
+
         while X != XJJ:
             XSS = square_closure(X, partitions)
             if XJJ == XSS:
@@ -121,13 +200,31 @@ def attribute_exploration_pps(tuples):
             else:
                 XJJS = square(XJJ, partitions)
                 XS = square(X, partitions)
-                
-                for pi, pj in product(XJJS, XS):
-                    
-                    if pi.issubset(pj) and len(pi) < len(pj):
-                        ta = list(pj-pi)[0]
-                        break
-                tb = list(pi)[0]
+                if len(XJJS) == 1 and not bool(XJJS[0]):
+                    ta, tb = list(XS[0])[0:2]
+                else:
+                    done = False
+                    for pi, pj in product(XJJS, XS):
+                        if pi.issubset(pj) and len(pi) < len(pj):
+                            ta = list(pj-pi)[0]
+                            done = True
+                            break
+                    tb = list(pi)[0]
+                    if not done:
+                        not_singleton = reduce(set.union, XJJS)
+
+                        for i in range(Partition.N_TUPLES):
+                            if i not in not_singleton:
+                                for pj in XS:
+                                    if i in pj:
+                                        ta = list(pj-set([i]))[0]
+                                        tb = i
+                                        done = True
+                                        break
+                            if done:
+                                break
+                sampled_tuple = tuple(sorted([ta,tb]))
+                picked.add(sampled_tuple)
 
                 gp = set([i for i, (a,b) in enumerate(zip(tuples[ta], tuples[tb])) if a==b ])
                 for x in gp:
@@ -139,6 +236,7 @@ def attribute_exploration_pps(tuples):
     for i, (ant, con) in enumerate(L):
         print '{} - {}=>{}'.format(i+1, sorted(ant), sorted(con-ant))
     print "SAMPLING CONTEXT SIZE:{}".format(len(g_prime))
+    print "CYCLES:",cycles
 
 if __name__ == "__main__":
     tuples = read_csv(sys.argv[1])
