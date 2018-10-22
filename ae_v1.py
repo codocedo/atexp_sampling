@@ -189,6 +189,7 @@ def execute(**params):
     print 'Time:', time.time()-t0
     print "SHORTS:", shorts
     print "QUESTIONS_ASKED:", shorts2
+    print "NOT FDS:", shorts3
     print "WHILES:", wit
     
     out = []

@@ -1,6 +1,6 @@
 ## OPTIMIZATION 1NAIVE VERSION
 # USES STRIPED PARTITIONS
-# USES A STACK
+# USES ORDERED PARTITIONS
 
 import csv
 import sys
@@ -15,17 +15,10 @@ class Partition(object):
     list of sets
     '''
     N_TUPLES = 0
-    def __init__(self, desc):
-        '''
-        Sort and split the partition
-        '''
-        self.idx = None
-        desc = [i for i in desc if len(i) > 1]
-        desc.sort(key=lambda k: (len(k), min(k)), reverse=True)
-        if len(desc) == 0:
-            desc.append(set([]))
-        super(Partition, self).__init__(desc)
-        self._nparts = None
+
+    @staticmethod
+    def nparts(desc):
+        return len(desc) + Partition.N_TUPLES - (sum([len(i) for i in desc]))
 
     @staticmethod
     def from_lst(lst):
@@ -216,8 +209,19 @@ def attribute_exploration_pps(tuples):
     fctx = FormalContext(g_prime, m_prime)
 
     representations = [[row[j] for row in tuples] for j in U]
-    partitions = map(Partition.from_lst, representations)
+
+    # ORDERING
+    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
+    order.sort(key=lambda k: k[0], reverse=False)
+    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
+    inv_order = {i:j for j,i in order.items()}
+    for ti, t in enumerate(tuples):
+        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
     
+    # END ORDERING
+    representations = [[row[j] for row in tuples] for j in U]
+    partitions = map(Partition.from_lst, representations)
+
     stack = [[None, set([])]]
 
     X = set([])

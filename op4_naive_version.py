@@ -1,6 +1,9 @@
 ## OPTIMIZATION 1NAIVE VERSION
 # USES STRIPED PARTITIONS
 # USES A STACK
+# USES ORDERED PARTITIONS
+
+
 
 import csv
 import sys
@@ -15,17 +18,17 @@ class Partition(object):
     list of sets
     '''
     N_TUPLES = 0
-    def __init__(self, desc):
-        '''
-        Sort and split the partition
-        '''
-        self.idx = None
-        desc = [i for i in desc if len(i) > 1]
-        desc.sort(key=lambda k: (len(k), min(k)), reverse=True)
-        if len(desc) == 0:
-            desc.append(set([]))
-        super(Partition, self).__init__(desc)
-        self._nparts = None
+    TOP = None
+    @staticmethod
+    def top():
+        if Partition.TOP is None:
+            # Partition.TOP = [set(range(Partition.N_TUPLES))]
+            Partition.TOP = [set(range(Partition.N_TUPLES))]
+        return Partition.TOP
+
+    @staticmethod
+    def nparts(desc):
+        return len(desc) + Partition.N_TUPLES - (sum([len(i) for i in desc]))
 
     @staticmethod
     def from_lst(lst):
@@ -101,7 +104,7 @@ def square(X, partitions):
     if bool(X):
         return reduce(Partition.intersection, [partitions[x] for x in X])
     else:
-        return [set(range(Partition.N_TUPLES))]#[reduce(set.union, partitions[0])]
+        return Partition.top()#[reduce(set.union, partitions[0])]
 
 def square_closure(X, partitions):
     pattern = square(X, partitions)
@@ -202,11 +205,36 @@ def next_closure(A, M, closure, m_i=None, stack=None):
             # print A.union([m]),"''=",B
             if not bool(B-A) or m <= min(B-A):
                 # print B
-                stack.append([None,set([])])
+                stack.append([None,set([]), None])
                 return B, m
     return M, M[-1]
 
+def sampling(XJJS, XS):
+    if len(XJJS) == 1 and not bool(XJJS[0]): # IF XJJS IS THE TOP
+        ta, tb = list(XS[0])[0:2]
+    else:
+        done = False
+        for pi, pj in product(XJJS, XS):
+            if pi.issubset(pj) and len(pi) < len(pj):
+                ta = list(pj-pi)[0]
+                done = True
+                break
 
+        tb = list(pi)[0]
+        if not done:
+            not_singleton = reduce(set.union, XJJS)
+
+            for i in range(Partition.N_TUPLES):
+                if i not in not_singleton:
+                    for pj in XS:
+                        if i in pj:
+                            ta = list(pj-set([i]))[0]
+                            tb = i
+                            done = True
+                            break
+                if done:
+                    break
+    return tuple(sorted([ta,tb]))
 
 def attribute_exploration_pps(tuples):
     U = range(len(tuples[0])) # Attributes
@@ -216,9 +244,21 @@ def attribute_exploration_pps(tuples):
     fctx = FormalContext(g_prime, m_prime)
 
     representations = [[row[j] for row in tuples] for j in U]
-    partitions = map(Partition.from_lst, representations)
+
+    # ORDERING
+    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
+    order.sort(key=lambda k: k[0], reverse=False)
+    print order
+    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
+    inv_order = {i:j for j,i in order.items()}
+    for ti, t in enumerate(tuples):
+        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
     
-    stack = [[None, set([])]]
+    # END ORDERING
+    representations = [[row[j] for row in tuples] for j in U]
+    partitions = map(Partition.from_lst, representations)
+
+    stack = [[None, None, None],[None, set([]), Partition.top()]]
 
     X = set([])
     L = []
@@ -240,46 +280,34 @@ def attribute_exploration_pps(tuples):
         XS = None
         while X != XJJ:
             if XSS is None:
-                XSS = square_closure(X, partitions)
+                if stack[-2][2] is not None:
+                    XS = Partition.intersection(stack[-2][2], partitions[m_i])
+                else:
+                    si = len(stack)
+                    for si in range(len(stack)-2, 0, -1):
+                        if stack[si][2] is not None:
+                            break
+                    for i in range(si+1, len(stack)-1):
+                        stack[i][2] = Partition.intersection(stack[i-1][2], partitions[stack[i][0]])
+                    if m_i is not None:
+                        XS = Partition.intersection(stack[-2][2], partitions[m_i])
+                    else:
+                        XS = square(X, partitions)
+                XSS = X.union([m for m in XJJ-X if Partition.leq(XS, partitions[m])])
+                # XSS = set([i for i, p in enumerate(partitions) if Partition.leq(XS, p)])
             if XJJ == XSS:
                 L.append((set(X), set(XJJ)))                
                 break
             else:
-                if XS is None:
-                    XS = square(X, partitions)
-                XJJS = square(XJJ, partitions)
-                
-                if len(XJJS) == 1 and not bool(XJJS[0]):
-                    ta, tb = list(XS[0])[0:2]
-                else:
-                    done = False
-                    for pi, pj in product(XJJS, XS):
-                        if pi.issubset(pj) and len(pi) < len(pj):
-                            ta = list(pj-pi)[0]
-                            done = True
-                            break
-
-                    tb = list(pi)[0]
-                    if not done:
-                        not_singleton = reduce(set.union, XJJS)
-
-                        for i in range(Partition.N_TUPLES):
-                            if i not in not_singleton:
-                                for pj in XS:
-                                    if i in pj:
-                                        ta = list(pj-set([i]))[0]
-                                        tb = i
-                                        done = True
-                                        break
-                            if done:
-                                break
-                sampled_tuple = tuple(sorted([ta,tb]))
+                XJJS = reduce(Partition.intersection, [partitions[x] for x in XJJ-XSS]+[XS])
+                sampled_tuple = sampling(XJJS, XS)
 
                 XJ.add(len(g_prime))
 
-                for i in stack:
+                for i in stack[1:]:
                     i[1].add(len(g_prime))
-                gp = set([i for i, (a,b) in enumerate(zip(tuples[ta], tuples[tb])) if a==b ])
+                
+                gp = set([i for i, (a,b) in enumerate(zip(tuples[sampled_tuple[0]], tuples[sampled_tuple[1]])) if a==b ])
                 for x in gp:
                     m_prime[x].add(len(g_prime))
                 g_prime.append(gp)
@@ -295,12 +323,13 @@ def attribute_exploration_pps(tuples):
             X.difference_update([m for m in X if m > m_i])
 
         stack[-1][1] = XJ
+        stack[-1][2] = XS
         X, m_i = next_closure(X, U, pc.l_close, m_i, stack)
         # print stack
         stack[-1][0] = m_i
     # for i, (ant, con) in enumerate(L):
     #     print '{} - {}=>{}'.format(i+1, sorted(ant), sorted(con-ant))
-    print "N_FDS:{}".format(len(L))
+    print "\nN_FDS:{}".format(len(L))
     print "SAMPLING CONTEXT SIZE:{}".format(len(g_prime))
     print "CYCLES:",cycles
 
