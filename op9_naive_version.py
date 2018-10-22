@@ -8,6 +8,8 @@ import csv
 import sys
 import copy
 import random
+import argparse
+import time
 from ae_libs.enumerations import LectiveEnum
 from ae_libs.boolean_tree import BooleanTree
 # from ae_libs.representations import Partition
@@ -273,7 +275,9 @@ def attribute_exploration_pps(tuples):
     
     dist = {t:0 for t in range(len(tuples))}
 
-    non_fds_cache = BooleanTree()
+    
+
+
 
     fctx = FormalContext(g_prime, m_prime)
     sampled_tuples = []
@@ -300,32 +304,101 @@ def attribute_exploration_pps(tuples):
                 T[t] = ki
         partition_signatures.append(T)
 
+    # print partition_signatures
+    non_fds_cache = BooleanTree()
+    ctx_btree = BooleanTree()
+    partition_s = [map(list, partition) for partition in partitions]
+    for partition in partition_s:
+        map(random.shuffle, partition)
+    # pick one partition
+    # print partitions
+    # partition = partitions[0]
+    
+    windows = [1]*len(U)
+    # for partition in partition_s:
+    #     for part in partition:
+    #         for i in range(len(part)-window):
+    #             atts = match(part[i], part[i+window])
+    #             non_fds_cache.append((m in atts for m in U))
+    # window += 1
+    # print non_fds_cache
+    # window += 1
+    # print non_fds_cache
+    # exit()
+
+
+
     stack = [[None, None, None],[None, set([]), Partition.top()]]
 
     X = set([])
     L = []
     pc = PreClosure(L, len(U))
     m_i = None
+    # m_top = frozenset(range(len(m_prime)))
     cycles = 0
+    cycles2 = 0
+    cycles3 = 0
     XJ = set([])
     XJJ = fctx.closed_set(X)
     count_good_points = 0
+    do_sample = False
     while X != U:
+        if do_sample and float(cycles3)/(cycles+1) < 0.1:
+            # for partition in partition_s:
+            for part in partition_s[m_i]:
+                for i in range(len(part)-windows[m_i]):
+                    atts = match(part[i], part[i+windows[m_i]])
+                    non_fds_cache.append((m in atts for m in U))
+            windows[m_i] += 1
+            do_sample = False
+            # print window
+            # print non_fds_cache
         cycles += 1
-        print "\r{0: <10}".format(','.join(map(str, sorted(X)))),#stack
+        if cycles%1==0:
+            do_sample = True
+        print "\rFDs:{}/{}/{}/{}/{} - {: <100}".format(len(L), cycles, cycles2, float(cycles3)/cycles, len(g_prime), ','.join(map(str, sorted(X)))),#stack
         sys.stdout.flush()
-        
-        if m_i is not None:
-            XJ = stack[-2][1].intersection(m_prime[m_i])
-            XJJ = fctx.derive_extent(XJ)
+        X_match = [i in X for i in U]
 
+        if X_match in non_fds_cache and X!=XJJ:
+            # XJ = stack[-2][1]
+            XJ = stack[-2][1].intersection(m_prime[m_i])
+            XJJ = X
+            cycles3 += 1
+            # print '\n\t',X
+
+        elif m_i is not None:
+            
+            XJ = stack[-2][1].intersection(m_prime[m_i])
+            if bool(XJ):
+                SXJ = sorted(XJ, key=lambda g: len(g_prime[g]))
+                XJJ = copy.copy(g_prime[SXJ[0]])
+                for g in SXJ[1:]:
+                    # print '\n\t', XJJ,'::', X, m_i
+                    XJJ.intersection_update(g_prime[g])
+                    if len(XJJ) == len(X):
+                        # print 'x'
+                        break
+                        
+                # XJJ = fctx.derive_extent(XJ)
+            else:
+                XJJ = set(range(len(m_prime)))
+            # print '\t=>', X, m_i, '::', XJ, XJJ
+        
         cache = {}
         XSS = None
         XS = None
-        X_match = [i in X for i in U]
+        
+        
         
         count_good_points += len(X) == len(XJJ)
+        # if len(XJJ) == len(X):
+        #     print m_i
+        #     print    XJJ, X, XJ
+        #     exit()
+        
         while X != XJJ:
+            cycles2 += 1
             # print '.',
             sys.stdout.flush()
             if XSS is None:
@@ -352,6 +425,8 @@ def attribute_exploration_pps(tuples):
                 L.append((set(X), set(XJJ)))                
                 break
             else:
+                # for sample in cache:
+                #     non_fds_cache.append([i in sample[1] for i in U])
                 
                 sampled_tuple, gp = cache.pop()
                 for t in sampled_tuple:
@@ -367,6 +442,7 @@ def attribute_exploration_pps(tuples):
                 for x in gp:
                     m_prime[x].add(len(g_prime))
                 g_prime.append(gp)
+                ctx_btree.append([i in gp for i in U])
                 
                 XJJ.intersection_update(gp)
 
@@ -398,7 +474,16 @@ def attribute_exploration_pps(tuples):
     # print dist
 
 if __name__ == "__main__":
-    tuples = read_csv(sys.argv[1], separator=',')
+    
+    __parser__ = argparse.ArgumentParser(description='FD Miner - Sampling-based Version')
+    __parser__.add_argument('database', metavar='database_path', type=str, help='path to the formal database')
+    __parser__.add_argument('-s', '--separator', metavar='separator', type=str, help='Cell separator in each row', default=',')
+    # __parser__.add_argument('-p', '--use_patterns', help='Use Pattern Structures for DB', action='store_true')
+    __parser__.add_argument('-i', '--ignore_headers', help='Ignore Headers', action='store_true')
+    args = __parser__.parse_args()
 
+    tuples = read_csv(args.database, separator=args.separator)
+    t0 = time.time()
     attribute_exploration_pps(tuples)
+    print "TIME: {}s".format(time.time()-t0)
 

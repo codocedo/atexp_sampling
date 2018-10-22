@@ -8,8 +8,11 @@ import csv
 import sys
 import copy
 import random
+import argparse
+import time
 from ae_libs.enumerations import LectiveEnum
 from ae_libs.boolean_tree import BooleanTree
+from ae_libs.fd_tree import FDTree
 # from ae_libs.representations import Partition
 from itertools import product
 
@@ -303,29 +306,53 @@ def attribute_exploration_pps(tuples):
     stack = [[None, None, None],[None, set([]), Partition.top()]]
 
     X = set([])
-    L = []
-    pc = PreClosure(L, len(U))
+    # L = []
+    # pc = PreClosure(L, len(U))
+    fdt = FDTree(U)
     m_i = None
+    # m_top = frozenset(range(len(m_prime)))
     cycles = 0
+    cycles2 = 0
     XJ = set([])
     XJJ = fctx.closed_set(X)
     count_good_points = 0
+    USet = set(U)
     while X != U:
         cycles += 1
-        print "\r{0: <10}".format(','.join(map(str, sorted(X)))),#stack
+        # if cycles%100==0:
+        print "\rFDs:{}/{}/{}/{} - {: <100}".format(fdt.n_fds, cycles, cycles2, len(g_prime), ','.join(map(str, sorted(X)))),#stack
         sys.stdout.flush()
         
         if m_i is not None:
             XJ = stack[-2][1].intersection(m_prime[m_i])
-            XJJ = fctx.derive_extent(XJ)
-
+            if bool(XJ) and len(XJ) < len(U)-len(X):
+                SXJ = sorted(XJ, key=lambda g: len(g_prime[g]))
+                XJJ = copy.copy(g_prime[SXJ[0]])
+                for g in SXJ[1:]:
+                    # print '\n\t', XJJ,'::', X, m_i
+                    XJJ.intersection_update(g_prime[g])
+                    if len(XJJ) == len(X):
+                        # print 'x'
+                        break
+            elif bool(XJ) and len(XJ) >= len(USet)-len(X):
+                XJJ = X.union([m for m in USet-X if XJ.issubset(m_prime[m])])
+                # XJJ = fctx.derive_extent(XJ)
+            else:
+                XJJ = set(range(len(m_prime)))
+            # print '\t=>', X, m_i, '::', XJ, XJJ
+        
         cache = {}
         XSS = None
         XS = None
         X_match = [i in X for i in U]
         
         count_good_points += len(X) == len(XJJ)
+        # if len(XJJ) == len(X):
+        #     print m_i
+        #     print    XJJ, X, XJ
+        #     exit()
         while X != XJJ:
+            cycles2 += 1
             # print '.',
             sys.stdout.flush()
             if XSS is None:
@@ -349,9 +376,12 @@ def attribute_exploration_pps(tuples):
             # print '.',
             sys.stdout.flush()
             if XJJ == XSS:
-                L.append((set(X), set(XJJ)))                
+                # L.append((set(X), set(XJJ)))
+                fdt.add_fd(X, XJJ)
                 break
             else:
+                # for sample in cache:
+                #     non_fds_cache.append([i in sample[1] for i in U])
                 
                 sampled_tuple, gp = cache.pop()
                 for t in sampled_tuple:
@@ -379,9 +409,11 @@ def attribute_exploration_pps(tuples):
         stack[-1][1] = XJ
         stack[-1][2] = XS
 
-        X, m_i = next_closure(X, U, pc.l_close, m_i, stack)
+        # X, m_i = next_closure(X, U, pc.l_close, m_i, stack)
+        X, m_i = next_closure(X, U, fdt.l_close, m_i, stack)
         stack[-1][0] = m_i
 
+    L = list(fdt.read_fds())
     print "\nN_FDS:{}".format(len(L))
     print "SAMPLING CONTEXT SIZE:{}".format(len(g_prime))
     print "CYCLES:",cycles
@@ -398,7 +430,16 @@ def attribute_exploration_pps(tuples):
     # print dist
 
 if __name__ == "__main__":
-    tuples = read_csv(sys.argv[1], separator=',')
+    
+    __parser__ = argparse.ArgumentParser(description='FD Miner - Sampling-based Version')
+    __parser__.add_argument('database', metavar='database_path', type=str, help='path to the formal database')
+    __parser__.add_argument('-s', '--separator', metavar='separator', type=str, help='Cell separator in each row', default=',')
+    # __parser__.add_argument('-p', '--use_patterns', help='Use Pattern Structures for DB', action='store_true')
+    __parser__.add_argument('-i', '--ignore_headers', help='Ignore Headers', action='store_true')
+    args = __parser__.parse_args()
 
+    tuples = read_csv(args.database, separator=args.separator)
+    t0 = time.time()
     attribute_exploration_pps(tuples)
+    print "TIME: {}s".format(time.time()-t0)
 

@@ -92,14 +92,15 @@ class BooleanTree(object):
         return self.n_elements
     def __repr__(self):
         return "<BooleanTree>::{}".format(list(self.read(single_read=False)))
+
     # def explode_prefix(self, prefix):
-    #     current_node = self.root
-    #     for i in prefix:
-    #         if current_node[i] is None:
-    #             return 
-    #         current_node = current_node[i]
-    #     for i in self.recursive_read(current_node, [], False):
-    #         yield i
+#     current_node = self.root
+#     for i in prefix:
+#         if current_node[i] is None:
+#             return 
+#         current_node = current_node[i]
+#     for i in self.recursive_read(current_node, [], False):
+#         yield i
 
 
     
@@ -125,5 +126,4 @@ if __name__ == "__main__":
     bt.append((True, True, True, True))
     print "Return Two Elements:", list([i for i in bt]) # Should return only the previous two elements. Same as print list(bt.read(single_read=True)) 
     print "Return all elements:", list(bt.read(single_read=False)) # should return all elements
-    
     # print sorted(set(lsts))
