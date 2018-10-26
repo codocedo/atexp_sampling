@@ -56,15 +56,10 @@ class Partition(object):
         '''
         Procedure STRIPPED_PRODUCT defined in [1]
         '''
-        # print 'TT',T
-        # print desc, other
+        
         new_desc = []
-        # T = {}
+        
         S = {i:set([]) for i in set(T.values())}
-        # for i, k in enumerate(desc):
-        #     for t in k:
-        #         T[t] = i
-        #     S[i] = set([])
         
         for k in other:
             for t in k:
@@ -86,14 +81,6 @@ class Partition(object):
         '''
         if len(desc) == 1 and len(desc[0]) == 0:
             return True
-        # if other.nparts > self.nparts:
-        #     return False
-        # T = {}
-
-        # for i, k in enumerate(other):
-        #     for t in k:
-        #         T[t] = i
-        
         for k in desc:
             kk = sorted(k, key=lambda k: dist[k], reverse=True)
             
@@ -105,17 +92,6 @@ class Partition(object):
                     cache[fpair] = match(fpair[0], fpair[1])
                     return False
         return True
-
-    # @staticmethod
-    # def leq(desc, other):
-    #     '''
-    #     Procedure STRIPPED_PRODUCT defined in [1]
-    #     '''
-    #     for i in desc:
-    #         if not any(i.issubset(j) for j in other):
-    #             return False
-    #     return True
-#####
 
 def leq_partitions(d1, d2):
     for pi in d1:
@@ -269,11 +245,52 @@ def sampling(XJJS, XS):
 def match(t1, t2):
     return set([i for i, (a,b) in enumerate(zip(tuples[t1], tuples[t2])) if a==b ])
 
+def check(new_att, X, XJJ, tuples, n_atts, cache, rand_tuples):
+    signatures = {}
+    tuple_map = {}
+    # preintent = prevint + [new_att]
+    
+    preintent = sorted(X)
+    members = sorted(XJJ-X)
+    AII = set(range(len(members)))
+    
+    
+    for h in range(len(tuples)):
+        ti = rand_tuples[h]
+        row = tuples[ti]
+        left = tuple([row[att] for att in preintent])
+        right = tuple([row[att] for att in members])
+        sign = signatures.get(left, None)
+        if sign is None:
+            signatures[left] = right
+            tuple_map[left] = ti
+        elif any(sign[idx] != right[idx] for idx in AII):
+            i = ti
+            j = tuple_map[left]
+            new_point = (i,j) if i<j else (j,i)
+            # match = [tuples[i][att]==tuples[j][att] for att in range(n_atts) ]
+            cache[new_point] = set([att for att in range(n_atts) if tuples[i][att]==tuples[j][att]])
+            # self.non_fds.append(match)
+            # self.cache.append(new_point)
+
+            map(AII.remove, [att for att in AII if sign[att] != right[att]])
+
+        if not bool(AII):
+            break
+    AII = X.union([members[idx] for idx in AII])
+
+    return AII
+
 def attribute_exploration_pps(tuples):
     U = range(len(tuples[0])) # Attributes
+    n_atts = len(U)
     m_prime = [set([]) for i in range(len(U))]
     g_prime = []
     
+    rand_tuples = range(len(tuples))
+    # rand_tuples.sort(key=lambda i: len(set(tuples[i])))
+    random.shuffle(rand_tuples)
+
     dist = {t:0 for t in range(len(tuples))}
 
     # non_fds_cache = BooleanTree()
@@ -281,29 +298,29 @@ def attribute_exploration_pps(tuples):
     fctx = FormalContext(g_prime, m_prime)
     sampled_tuples = []
 
-    representations = [[row[j] for row in tuples] for j in U]
+    # representations = [[row[j] for row in tuples] for j in U]
 
-    # ORDERING
-    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
-    order.sort(key=lambda k: k[0], reverse=False)
-    print order
-    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
-    inv_order = {i:j for j,i in order.items()}
-    for ti, t in enumerate(tuples):
-        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
+    # # ORDERING
+    # order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
+    # order.sort(key=lambda k: k[0], reverse=False)
+    # print order
+    # order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
+    # inv_order = {i:j for j,i in order.items()}
+    # for ti, t in enumerate(tuples):
+    #     tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
     
-    # END ORDERING
-    representations = [[row[j] for row in tuples] for j in U]
-    partitions = map(Partition.from_lst, representations)
-    partition_signatures = []
-    for partition in partitions:
-        T={}
-        for ki, k in enumerate(partition):
-            for t in k:
-                T[t] = ki
-        partition_signatures.append(T)
+    # # END ORDERING
+    # representations = [[row[j] for row in tuples] for j in U]
+    # partitions = map(Partition.from_lst, representations)
+    # partition_signatures = []
+    # for partition in partitions:
+    #     T={}
+    #     for ki, k in enumerate(partition):
+    #         for t in k:
+    #             T[t] = ki
+    #     partition_signatures.append(T)
 
-    stack = [[None, None, None],[None, set([]), Partition.top()]]
+    stack = [[None, None],[None, set([])]]
 
     X = set([])
     # L = []
@@ -318,6 +335,7 @@ def attribute_exploration_pps(tuples):
     count_good_points = 0
     USet = set(U)
     while X != U:
+        
         cycles += 1
         # if cycles%100==0:
         print "\rFDs:{}/{}/{}/{} - {: <100}".format(fdt.n_fds, cycles, cycles2, len(g_prime), ','.join(map(str, sorted(X)))),#stack
@@ -329,22 +347,17 @@ def attribute_exploration_pps(tuples):
                 SXJ = sorted(XJ, key=lambda g: len(g_prime[g]))
                 XJJ = copy.copy(g_prime[SXJ[0]])
                 for g in SXJ[1:]:
-                    # print '\n\t', XJJ,'::', X, m_i
                     XJJ.intersection_update(g_prime[g])
                     if len(XJJ) == len(X):
-                        # print 'x'
                         break
             elif bool(XJ) and len(XJ) >= len(USet)-len(X):
                 XJJ = X.union([m for m in USet-X if XJ.issubset(m_prime[m])])
-                # XJJ = fctx.derive_extent(XJ)
             else:
                 XJJ = set(range(len(m_prime)))
-            # print '\t=>', X, m_i, '::', XJ, XJJ
-        
+        # print '\n XJJ', XJJ
         cache = {}
         XSS = None
-        XS = None
-        # X_match = [i in X for i in U]
+        # XS = None
         
         count_good_points += len(X) == len(XJJ)
         # if len(XJJ) == len(X):
@@ -356,21 +369,24 @@ def attribute_exploration_pps(tuples):
             # print '.',
             sys.stdout.flush()
             if XSS is None:
-                if stack[-2][2] is not None:
-                    XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
-                else:
-                    si = len(stack)
-                    for si in range(len(stack)-2, 0, -1):
-                        if stack[si][2] is not None:
-                            break
-                    for i in range(si+1, len(stack)-1):
-                        stack[i][2] = Partition.intersection(stack[i-1][2], partition_signatures[stack[i][0]]) # partitions[stack[i][0]])
-                    if m_i is not None:
-                        XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
-                    else:
-                        XS = square(X, partitions)
+                # if stack[-2][2] is not None:
+                #     XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
+                # else:
+                #     si = len(stack)
+                #     for si in range(len(stack)-2, 0, -1):
+                #         if stack[si][2] is not None:
+                #             break
+                #     for i in range(si+1, len(stack)-1):
+                #         stack[i][2] = Partition.intersection(stack[i-1][2], partition_signatures[stack[i][0]]) # partitions[stack[i][0]])
+                #     if m_i is not None:
+                #         XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
+                #     else:
+                #         XS = square(X, partitions)
+                # cache2 = {}
+                XSS = check(m_i, X, XJJ, tuples, n_atts, cache, rand_tuples)
+                # print cache
+                # XSS = X.union([m for m in sorted(XJJ-X, reverse=True) if all(m in atts for atts in cache.values()) and Partition.leq(XS, partition_signatures[m], cache, dist)  ])
                 
-                XSS = X.union([m for m in sorted(XJJ-X, reverse=True) if all(m in atts for atts in cache.values()) and Partition.leq(XS, partition_signatures[m], cache, dist)  ])
                 cache = sorted(cache.items(), key=lambda ((t1, t2), atts): len(atts))
                 # print cache
             # print '.',
@@ -407,7 +423,7 @@ def attribute_exploration_pps(tuples):
             X.difference_update([m for m in X if m > m_i])
 
         stack[-1][1] = XJ
-        stack[-1][2] = XS
+        # stack[-1][2] = XS
 
         # X, m_i = next_closure(X, U, pc.l_close, m_i, stack)
         X, m_i = next_closure(X, U, fdt.l_close, m_i, stack)
