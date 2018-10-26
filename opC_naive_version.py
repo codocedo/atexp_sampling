@@ -277,6 +277,7 @@ def check(new_att, X, XJJ, tuples, n_atts, cache, rand_tuples):
 
         if not bool(AII):
             break
+    
     AII = X.union([members[idx] for idx in AII])
 
     return AII
@@ -288,8 +289,8 @@ def attribute_exploration_pps(tuples):
     g_prime = []
     
     rand_tuples = range(len(tuples))
-    # rand_tuples.sort(key=lambda i: len(set(tuples[i])))
-    random.shuffle(rand_tuples)
+    rand_tuples.sort(key=lambda i: len(set(tuples[i])))
+    # random.shuffle(rand_tuples)
 
     dist = {t:0 for t in range(len(tuples))}
 
@@ -298,16 +299,16 @@ def attribute_exploration_pps(tuples):
     fctx = FormalContext(g_prime, m_prime)
     sampled_tuples = []
 
-    # representations = [[row[j] for row in tuples] for j in U]
+    representations = [[row[j] for row in tuples] for j in U]
 
-    # # ORDERING
-    # order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
-    # order.sort(key=lambda k: k[0], reverse=False)
-    # print order
-    # order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
-    # inv_order = {i:j for j,i in order.items()}
-    # for ti, t in enumerate(tuples):
-    #     tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
+    # ORDERING
+    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
+    order.sort(key=lambda k: k[0], reverse=False)
+    print order
+    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
+    inv_order = {i:j for j,i in order.items()}
+    for ti, t in enumerate(tuples):
+        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
     
     # # END ORDERING
     # representations = [[row[j] for row in tuples] for j in U]
