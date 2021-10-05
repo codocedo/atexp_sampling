@@ -304,22 +304,22 @@ def attribute_exploration_pps(tuples):
     # ORDERING
     order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
     order.sort(key=lambda k: k[0], reverse=False)
-    print order
+    
     order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
     inv_order = {i:j for j,i in order.items()}
     for ti, t in enumerate(tuples):
         tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
     
     # # END ORDERING
-    # representations = [[row[j] for row in tuples] for j in U]
-    # partitions = map(Partition.from_lst, representations)
-    # partition_signatures = []
-    # for partition in partitions:
-    #     T={}
-    #     for ki, k in enumerate(partition):
-    #         for t in k:
-    #             T[t] = ki
-    #     partition_signatures.append(T)
+    representations = [[row[j] for row in tuples] for j in U]
+    partitions = map(Partition.from_lst, representations)
+    partition_signatures = []
+    for partition in partitions:
+        T={}
+        for ki, k in enumerate(partition):
+            for t in k:
+                T[t] = ki
+        partition_signatures.append(T)
 
     stack = [[None, None],[None, set([])]]
 
@@ -367,23 +367,8 @@ def attribute_exploration_pps(tuples):
         #     exit()
         while X != XJJ:
             cycles2 += 1
-            # print '.',
             sys.stdout.flush()
             if XSS is None:
-                # if stack[-2][2] is not None:
-                #     XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
-                # else:
-                #     si = len(stack)
-                #     for si in range(len(stack)-2, 0, -1):
-                #         if stack[si][2] is not None:
-                #             break
-                #     for i in range(si+1, len(stack)-1):
-                #         stack[i][2] = Partition.intersection(stack[i-1][2], partition_signatures[stack[i][0]]) # partitions[stack[i][0]])
-                #     if m_i is not None:
-                #         XS = Partition.intersection(stack[-2][2], partition_signatures[m_i])
-                #     else:
-                #         XS = square(X, partitions)
-                # cache2 = {}
                 XSS = check(m_i, X, XJJ, tuples, n_atts, cache, rand_tuples)
                 # print cache
                 # XSS = X.union([m for m in sorted(XJJ-X, reverse=True) if all(m in atts for atts in cache.values()) and Partition.leq(XS, partition_signatures[m], cache, dist)  ])
@@ -431,6 +416,11 @@ def attribute_exploration_pps(tuples):
         stack[-1][0] = m_i
 
     L = list(fdt.read_fds())
+    
+    print ''
+    
+    for lhs, rhs in L:
+        print sorted([inv_order[i] for i in lhs]), '=>',sorted([inv_order[i] for i in rhs])
     print "\nN_FDS:{}".format(len(L))
     print "SAMPLING CONTEXT SIZE:{}".format(len(g_prime))
     print "CYCLES:",cycles

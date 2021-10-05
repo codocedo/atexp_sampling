@@ -2,13 +2,17 @@
 # USES STRIPED PARTITIONS
 # USES A STACK
 # USES ORDERED PARTITIONS
-# DOES NOT CALCULATE XJJS
+# USES A CACHE OF NON FDS
 
 import csv
 import sys
 import copy
+import random
+import argparse
+import time
 from ae_libs.enumerations import LectiveEnum
 from ae_libs.boolean_tree import BooleanTree
+from ae_libs.fd_tree import FDTree
 # from ae_libs.representations import Partition
 from itertools import product
 
@@ -48,20 +52,16 @@ class Partition(object):
         return desc
 
     @staticmethod
-    def intersection(desc, other):
+    def intersection(other, T):
         '''
         Procedure STRIPPED_PRODUCT defined in [1]
         '''
-        # print desc, other
-        new_desc = []
-        T = {}
-        S = {}
-        for i, k in enumerate(desc):
-            for t in k:
-                T[t] = i
-            S[i] = set([])
         
-        for i, k in enumerate(other):
+        new_desc = []
+        
+        S = {i:set([]) for i in set(T.values())}
+        
+        for k in other:
             for t in k:
                 if T.get(t, None) is not None:
                     S[T[t]].add(t)
@@ -75,46 +75,23 @@ class Partition(object):
         )
 
     @staticmethod
-    def leq(desc, other, cache):
+    def leq(desc, T, cache, dist):
         '''
         Procedure STRIPPED_PRODUCT defined in [1]
         '''
         if len(desc) == 1 and len(desc[0]) == 0:
             return True
-        # if other.nparts > self.nparts:
-        #     return False
-        T = {}
-
-        for i, k in enumerate(other):
-            for t in k:
-                T[t] = i
-        
-        for i, k in enumerate(desc):
+        for k in desc:
+            kk = sorted(k, key=lambda k: dist[k], reverse=True)
             
-            it = iter(k)
-            ti = next(it)
-            
-
-            mvalue = T.get(ti, -1)
-            fpair = [ti]
-            for ti in it:
-                if T.get(ti, -2) != mvalue:
-                    fpair.append(ti)
-                    # cache[tuple(fpair)] = match(fpair[0], fpair[1])
-                    
+            ta = kk[0]
+            mvalue = T.get(ta, -1)
+            for tb in kk[1:]:
+                if ta!=tb and T.get(tb, -2) != mvalue:
+                    fpair = (ta, tb) if ta<tb else (tb, ta)
+                    cache[fpair] = match(fpair[0], fpair[1])
                     return False
         return True
-
-    # @staticmethod
-    # def leq(desc, other):
-    #     '''
-    #     Procedure STRIPPED_PRODUCT defined in [1]
-    #     '''
-    #     for i in desc:
-    #         if not any(i.issubset(j) for j in other):
-    #             return False
-    #     return True
-#####
 
 def leq_partitions(d1, d2):
     for pi in d1:
@@ -137,9 +114,6 @@ def square(X, partitions):
     else:
         return Partition.top()#[reduce(set.union, partitions[0])]
 
-def square_closure(X, partitions):
-    pattern = square(X, partitions)
-    return set([i for i, p in enumerate(partitions) if Partition.leq(pattern, p)])
 
 def make_partition_from_list(lst):
     hashes = {}
@@ -266,94 +240,110 @@ def sampling(XJJS, XS):
                 if done:
                     break
     return tuple(sorted([ta,tb]))
+
+
 def match(t1, t2):
     return set([i for i, (a,b) in enumerate(zip(tuples[t1], tuples[t2])) if a==b ])
 
-def attribute_exploration_pps(tuples):
-    U = range(len(tuples[0])) # Attributes
-    m_prime = [set([]) for i in range(len(U))]
-    g_prime = []
-
-    non_fds_cache = BooleanTree()
-
-    fctx = FormalContext(g_prime, m_prime)
-
-    representations = [[row[j] for row in tuples] for j in U]
-
-    # ORDERING
-    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
-    order.sort(key=lambda k: k[0], reverse=False)
-    print order
-    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
-    inv_order = {i:j for j,i in order.items()}
-    for ti, t in enumerate(tuples):
-        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
+def check(new_att, X, XJJ, tuples, n_atts, cache, rand_tuples):
+    signatures = {}
+    tuple_map = {}
+    # preintent = prevint + [new_att]
     
-    # END ORDERING
-    representations = [[row[j] for row in tuples] for j in U]
-    partitions = map(Partition.from_lst, representations)
+    preintent = sorted(X)
+    members = sorted(XJJ-X)
+    AII = set(range(len(members)))
+    
+    
+    for h in range(len(tuples)):
+        ti = rand_tuples[h]
+        row = tuples[ti]
+        left = tuple([row[att] for att in preintent])
+        right = tuple([row[att] for att in members])
+        sign = signatures.get(left, None)
+        if sign is None:
+            signatures[left] = right
+            tuple_map[left] = ti
+        elif any(sign[idx] != right[idx] for idx in AII):
+            i = ti
+            j = tuple_map[left]
+            new_point = (i,j) if i<j else (j,i)
+            # match = [tuples[i][att]==tuples[j][att] for att in range(n_atts) ]
+            cache[new_point] = set([att for att in range(n_atts) if tuples[i][att]==tuples[j][att]])
+            # self.non_fds.append(match)
+            # self.cache.append(new_point)
 
-    stack = [[None, None, None],[None, set([]), Partition.top()]]
+            map(AII.remove, [att for att in AII if sign[att] != right[att]])
 
-    X = set([])
-    L = []
-    pc = PreClosure(L, len(U))
-    m_i = None
+        if not bool(AII):
+            break
+    
+    AII = X.union([members[idx] for idx in AII])
+
+    return AII
+
+def mine_fds(U, tuples, partitions, fctx, rand_tuples):
+    n_atts = len(U)
+    stack = [
+        [None, set([])],
+        [None, set([])]
+    ]
+
+    
+    fdt = FDTree(U) # FD store
+    # sampled_tuples = []
+    
+    m_i = None # First X \oplus m_i is none
+
+    # Counters
     cycles = 0
-    XJ = set([])
-    XJJ = fctx.closed_set(X)
+    cycles2 = 0
+
+    X = set([]) # First candidate
+    XJ = set([]) # First derivation
+    XJJ = fctx.closed_set(X) # First closure
+
+    count_good_points = 0
+    USet = set(U)
     while X != U:
         cycles += 1
-        print "\r{0: <10}".format(','.join(map(str, sorted(X)))),#stack
+        # print "\rFDs:{}/{}/{}/{} - {: <100}".format(fdt.n_fds, cycles, cycles2, len(fctx.g_prime), ','.join(map(str, sorted(X)))),#stack
         sys.stdout.flush()
-        
-        if m_i is not None:
-            XJ = stack[-2][1].intersection(m_prime[m_i])
-            XJJ = fctx.derive_extent(XJ)
 
+        if bool(XJ):
+            SXJ = sorted(XJ, key=lambda g: len(fctx.g_prime[g]))
+            XJJ = copy.copy(fctx.g_prime[SXJ[0]])
+            for g in SXJ[1:]:
+                XJJ.intersection_update(fctx.g_prime[g])
+                if len(XJJ) == len(X):
+                    break
+        else:
+            XJJ = set(range(len(fctx.m_prime)))
         cache = {}
         XSS = None
-        XS = None
-        X_match = [i in X for i in U]
         
+        count_good_points += len(X) == len(XJJ)
+
         while X != XJJ:
-            # print '.',
+            cycles2 += 1
             sys.stdout.flush()
             if XSS is None:
-                if stack[-2][2] is not None:
-                    XS = Partition.intersection(stack[-2][2], partitions[m_i])
-                else:
-                    si = len(stack)
-                    for si in range(len(stack)-2, 0, -1):
-                        if stack[si][2] is not None:
-                            break
-                    for i in range(si+1, len(stack)-1):
-                        stack[i][2] = Partition.intersection(stack[i-1][2], partitions[stack[i][0]])
-                    if m_i is not None:
-                        XS = Partition.intersection(stack[-2][2], partitions[m_i])
-                    else:
-                        XS = square(X, partitions)
-                
-                XSS = X.union([m for m in XJJ-X if all(m in atts for atts in cache.values()) and Partition.leq(XS, partitions[m], cache)  ])
-                cache = sorted(cache.items(), key=lambda ((t1, t2), matches): len(matches))
-            # print '.',
-            sys.stdout.flush()
+                XSS = check(m_i, X, XJJ, tuples, n_atts, cache, rand_tuples)
+                cache = sorted(cache.items(), key=lambda ((t1, t2), atts): len(atts))
             if XJJ == XSS:
-                L.append((set(X), set(XJJ)))                
+                fdt.add_fd(X, XJJ)
                 break
             else:
-
                 sampled_tuple, gp = cache.pop()
-                
 
-                XJ.add(len(g_prime))
+                XJ.add(len(fctx.g_prime))
 
                 for i in stack[1:]:
-                    i[1].add(len(g_prime))
+                    i[1].add(len(fctx.g_prime))
 
                 for x in gp:
-                    m_prime[x].add(len(g_prime))
-                g_prime.append(gp)
+                    fctx.m_prime[x].add(len(fctx.g_prime))
+                fctx.g_prime.append(gp)
                 
                 XJJ.intersection_update(gp)
 
@@ -364,17 +354,75 @@ def attribute_exploration_pps(tuples):
             X.difference_update([m for m in X if m > m_i])
 
         stack[-1][1] = XJ
-        stack[-1][2] = XS
 
-        X, m_i = next_closure(X, U, pc.l_close, m_i, stack)
+        X, m_i = next_closure(X, U, fdt.l_close, m_i, stack)
         stack[-1][0] = m_i
+        XJ = stack[-2][1].intersection(fctx.m_prime[m_i])
+    return fdt
 
+def attribute_exploration_pps(tuples):
+    U = range(len(tuples[0])) # Attributes
+    
+    m_prime = [set([]) for i in range(len(U))]
+    g_prime = []
+    
+    rand_tuples = range(len(tuples))
+    rand_tuples.sort(key=lambda i: len(set(tuples[i])))
+
+    dist = {t:0 for t in range(len(tuples))}
+
+    fctx = FormalContext(g_prime, m_prime)
+    
+
+    representations = [[row[j] for row in tuples] for j in U]
+
+    # ORDERING
+    order = [(len(set(r)), ri) for ri, r in enumerate(representations)]
+    order.sort(key=lambda k: k[0], reverse=False)
+    
+    order = {j[1]:i for i,j in enumerate(order)} #Original order -> new order
+    inv_order = {i:j for j,i in order.items()}
+    for ti, t in enumerate(tuples):
+        tuples[ti] = [t[inv_order[i]] for i in range(len(t))]
+    
+    # # END ORDERING
+
+    representations = [[row[j] for row in tuples] for j in U]
+    partitions = map(Partition.from_lst, representations)
+    partition_signatures = []
+    for partition in partitions:
+        T={}
+        for ki, k in enumerate(partition):
+            for t in k:
+                T[t] = ki
+        partition_signatures.append(T)
+
+
+    fdt = mine_fds(U, tuples, partitions, fctx, rand_tuples)
+
+    L = list(fdt.read_fds())
+    
+    print ''
+    
+    for lhs, rhs in L:
+        print sorted([inv_order[i] for i in lhs]), '=>',sorted([inv_order[i] for i in rhs])
     print "\nN_FDS:{}".format(len(L))
-    print "SAMPLING CONTEXT SIZE:{}".format(len(g_prime))
-    print "CYCLES:",cycles
+    print "SAMPLING CONTEXT SIZE:{}".format(len(fctx.g_prime))
+    # print "CYCLES:",cycles
+    # print "GOOD CLOSURES:", count_good_points
+
 
 if __name__ == "__main__":
-    tuples = read_csv(sys.argv[1])
+    
+    __parser__ = argparse.ArgumentParser(description='FD Miner - Sampling-based Version')
+    __parser__.add_argument('database', metavar='database_path', type=str, help='path to the formal database')
+    __parser__.add_argument('-s', '--separator', metavar='separator', type=str, help='Cell separator in each row', default=',')
+    # __parser__.add_argument('-p', '--use_patterns', help='Use Pattern Structures for DB', action='store_true')
+    __parser__.add_argument('-i', '--ignore_headers', help='Ignore Headers', action='store_true')
+    args = __parser__.parse_args()
 
+    tuples = read_csv(args.database, separator=args.separator)
+    t0 = time.time()
     attribute_exploration_pps(tuples)
+    print "TIME: {}s".format(time.time()-t0)
 
